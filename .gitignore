@@ -1,0 +1,155 @@
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Machine Learning Models
+*.pkl
+*.h5
+*.model
+modelos_ml/*.pkl
+backend/modelos_ml/*.pkl
+
+# ===== NODE.JS / REACT =====
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Production builds
+frontend/build/
+frontend/dist/
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional REPL history
+.node_repl_history
+
+# Yarn
+.yarn-integrity
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ===== DATABASE =====
+*.db
+*.sqlite
+*.sqlite3
+inversor.db
+backend/inversor.db
+
+# ===== LOGS =====
+*.log
+logs/
+*.out
+
+# ===== IDE / EDITORS =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== SYSTEM FILES =====
+.system_pids.json
+*.pid
+
+# ===== TEMPORARY FILES =====
+*.tmp
+*.temp
+*.bak
+*.backup
+test_api.py
+backend/test_method.py
+
+# ===== CONFIGURACIÓN SENSIBLE =====
+# IMPORTANTE: No subir API keys ni configuración local
+.env.local
+.env.production
+secrets.json
+
+# Permitir .env de ejemplo
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+
+# ===== ESPECÍFICOS DEL PROYECTO =====
+# Datos de prueba
+datos_prueba/
+simulaciones/
+
+# Reportes generados
+reportes/*.pdf
+reportes/*.xlsx
+
+# ===== ESP32 FIRMWARE =====
+# Compilados
+firmware/build/
+firmware/.pio/
+firmware/.vscode/
+firmware/lib/
+firmware/test/
+
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+
+# ===== DOCUMENTACIÓN =====
+# Permitir documentación markdown
+!*.md
+!docs/
+
+# ===== NGROK =====
+ngrok
+ngrok.exe
+ngrok.yml

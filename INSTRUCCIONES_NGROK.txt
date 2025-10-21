@@ -1,0 +1,61 @@
+═══════════════════════════════════════════════════════════════
+  INSTRUCCIONES PARA NGROK CON PUERTOS PERSONALIZADOS
+═══════════════════════════════════════════════════════════════
+
+PASO 1: Ejecutar el sistema
+───────────────────────────
+    start_con_puertos.bat
+
+    Esto iniciará:
+    - Backend en puerto 8111
+    - Simulador
+    - Frontend en puerto 3001
+
+
+PASO 2: Configurar ngrok para el Backend
+─────────────────────────────────────────
+    En tu terminal de ngrok (donde ya lo tienes corriendo):
+
+    ngrok http 8111 --region=sa
+
+    Esto hará que tu URL apunte al backend:
+    https://argentina.ngrok.pro → http://localhost:8111
+
+
+PASO 3: Configurar el Frontend
+───────────────────────────────
+    Edita: frontend\.env
+
+    Cambia la primera línea a:
+    REACT_APP_API_URL=https://argentina.ngrok.pro
+
+    Luego reinicia el frontend (Ctrl+C y npm start)
+
+
+OPCIONAL: Exponer el Frontend también
+──────────────────────────────────────
+    Si quieres compartir el dashboard también:
+
+    En OTRA terminal de ngrok:
+    ngrok http 3001 --region=sa
+
+    Te dará otra URL para el frontend.
+
+
+═══════════════════════════════════════════════════════════════
+  RESUMEN DE PUERTOS
+═══════════════════════════════════════════════════════════════
+
+    Backend Local:    http://localhost:8111
+    Backend Público:  https://argentina.ngrok.pro
+
+    Frontend Local:   http://localhost:3001
+    Frontend Público: (crear otro tunnel ngrok)
+
+═══════════════════════════════════════════════════════════════
+
+IMPORTANTE: El puerto 8111 es el que usa el backend.
+Tu ngrok solo hace un "túnel" hacia ese puerto.
+
+Si quieres usar otro puerto (8112, 8113, etc), cambia el 
+--port en el script start_con_puertos.bat
