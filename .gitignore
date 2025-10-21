@@ -113,14 +113,19 @@ backend/test_method.py
 
 # ===== CONFIGURACIÓN SENSIBLE =====
 # IMPORTANTE: No subir API keys ni configuración local
+.env
 .env.local
 .env.production
 secrets.json
+backend/.env
+frontend/.env
+firmware/include/config.h
 
 # Permitir .env de ejemplo
 !.env.example
 !backend/.env.example
 !frontend/.env.example
+!firmware/include/config.h.example
 
 # ===== ESPECÍFICOS DEL PROYECTO =====
 # Datos de prueba

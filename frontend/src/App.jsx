@@ -18,6 +18,7 @@ import BatteryProtection from './components/BatteryProtection';
 import RecomendacionInicial from './components/RecomendacionInicial';
 import EfficiencyMonitor from './components/EfficiencyMonitor';
 import SmartStrategy from './components/SmartStrategy';
+import SystemStatus from './components/SystemStatus';
 import {
   getDashboardData,
   getEnergyHistory,
@@ -271,6 +272,26 @@ function App() {
         </div>
       </main>
 
+      {/* RecomendacionInicial siempre visible */}
+      <RecomendacionInicial />
+      
+      {/* Panel de Estado del Sistema */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+        <SystemStatus />
+      </div>
+      
+      {/* Contenido principal */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              Sistema Inversor Inteligente Híbrido con IA Meteorológica
+            </p>
+            <p className="text-xs text-gray-400">
+              &copy; 2024 - Desarrollado con React + FastAPI
+            </p>
+          </div>
+        </div>
+
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -279,7 +300,7 @@ function App() {
               Sistema Inversor Inteligente Híbrido con IA Meteorológica
             </p>
             <p className="text-xs text-gray-400">
-              © 2024 - Desarrollado con React + FastAPI
+              &copy; 2024 - Desarrollado con React + FastAPI
             </p>
           </div>
         </div>

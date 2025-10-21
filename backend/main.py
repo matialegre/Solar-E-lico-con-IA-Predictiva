@@ -24,6 +24,9 @@ from battery_protection import battery_protection
 from efficiency_monitor import efficiency_monitor
 from smart_strategy import smart_strategy
 
+# Importar nuevos routers
+from routers import esp32_router, dimensionamiento_router, ml_router, status_router
+
 settings = get_settings()
 
 # Inicializar FastAPI
@@ -68,6 +71,12 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+# ===== INCLUIR ROUTERS =====
+app.include_router(esp32_router.router)
+app.include_router(dimensionamiento_router.router)
+app.include_router(ml_router.router)
+app.include_router(status_router.router)
 
 
 # ===== EVENTOS =====
@@ -918,10 +927,20 @@ async def enviar_comando_esp32(device_id: str, command: dict):
     - {"command": "reboot"}
     - {"command": "clear_logs"}
     """
-    # En producción, esto se enviaría vía MQTT al dispositivo
-    # Por ahora solo lo registramos
+    # Guardar comando en cola (en producción sería Redis/DB)
+    if not hasattr(enviar_comando_esp32, 'command_queue'):
+        enviar_comando_esp32.command_queue = {}
     
-    print(f"📤 Comando enviado a {device_id}: {command}")
+    if device_id not in enviar_comando_esp32.command_queue:
+        enviar_comando_esp32.command_queue[device_id] = []
+    
+    enviar_comando_esp32.command_queue[device_id].append({
+        'command': command.get('command'),
+        'params': command.get('params', {}),
+        'timestamp': datetime.now().isoformat()
+    })
+    
+    print(f"📤 Comando encolado para {device_id}: {command}")
     
     return {
         'status': 'success',
@@ -929,6 +948,40 @@ async def enviar_comando_esp32(device_id: str, command: dict):
         'command': command.get('command'),
         'timestamp': datetime.now().isoformat()
     }
+
+
+@app.get("/api/esp32/commands/{device_id}")
+async def obtener_comandos_esp32(device_id: str):
+    """
+    ESP32 pregunta si hay comandos pendientes (HTTP Polling)
+    
+    El ESP32 hace GET cada X segundos para ver si hay comandos nuevos.
+    Esto funciona sin abrir puertos en el router del ESP32.
+    """
+    # Obtener comandos de la cola
+    if hasattr(enviar_comando_esp32, 'command_queue'):
+        commands = enviar_comando_esp32.command_queue.get(device_id, [])
+        
+        # Limpiar cola después de entregar
+        if device_id in enviar_comando_esp32.command_queue:
+            enviar_comando_esp32.command_queue[device_id] = []
+        
+        if commands:
+            print(f"📩 Entregando {len(commands)} comando(s) a {device_id}")
+        
+        return {
+            'status': 'success',
+            'device_id': device_id,
+            'commands': commands,
+            'count': len(commands)
+        }
+    else:
+        return {
+            'status': 'success',
+            'device_id': device_id,
+            'commands': [],
+            'count': 0
+        }
 
 
 if __name__ == "__main__":

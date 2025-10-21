@@ -45,24 +45,23 @@ bool SensorsManager::begin() {
     
     // INA219 Battery
     if (!ina219_battery.begin(&Wire, INA219_BATTERY_ADDR)) {
-        Serial.println("❌ Error inicializando INA219 Battery");
+        Serial.println(" Error inicializando INA219 Battery");
         return false;
     }
     ina219_battery.setCalibration_32V_2A();
-    Serial.println("✅ INA219 Battery OK");
+    Serial.println(" INA219 Battery OK");
     
-    // ADS1115
-    if (!ads1115.begin(ADS1115_ADDR)) {
-        Serial.println("❌ Error inicializando ADS1115");
-        return false;
-    }
-    ads1115.setGain(GAIN_ONE);  // +/- 4.096V
-    Serial.println("✅ ADS1115 OK");
+    // Configurar ADC interno ESP32
+    Serial.print("   ADC Interno ESP32 (LDR)... ");
+    pinMode(LDR_ADC_PIN, INPUT);
+    analogReadResolution(12);  // 12-bit (0-4095)
+    analogSetAttenuation(ADC_11db);  // 0-3.3V
+    Serial.println(" OK (GPIO34, 12-bit)");
     
     // DS18B20
     ds18b20.begin();
     ds18b20.setResolution(TEMP_PRECISION);
-    Serial.println("✅ DS18B20 OK");
+    Serial.println(" DS18B20 OK");
     
     // Anemómetro (Sensor Hall)
     pinMode(PIN_ANEMOMETRO, INPUT_PULLUP);
@@ -109,17 +108,17 @@ SensorData SensorsManager::getLastData() {
 }
 
 float SensorsManager::readIrradiance() {
-    // Leer LDR a través del ADS1115
-    int16_t adc_value = ads1115.readADC_SingleEnded(0);
+    // Leer ADC interno ESP32 (12-bit: 0-4095)
+    int adc_raw = analogRead(LDR_ADC_PIN);
     
-    // Convertir a voltaje (0-4.096V)
-    float voltage = adc_value * 0.125 / 1000.0;
+    // Aplicar calibración (mapear rango calibrado a 0-1000 W/m²)
+    float irradiance = map(adc_raw, ldr_raw_min, ldr_raw_max, 0, 1000);
     
-    // Convertir a irradiancia (calibración específica del LDR)
-    // Asumiendo: 0V = 0 W/m², 4V = 1000 W/m²
-    float irradiance = (voltage / 4.096) * 1000.0;
+    // Aplicar factor de calibración
+    irradiance *= ldr_calibration_factor;
     
-    return irradiance;
+    // Limitar a rango válido
+    return constrain(irradiance, 0, 1200);
 }
 
 float SensorsManager::readTemperature() {
@@ -128,7 +127,7 @@ float SensorsManager::readTemperature() {
     
     // Verificar lectura válida
     if (temp == DEVICE_DISCONNECTED_C) {
-        Serial.println("⚠️  DS18B20 desconectado");
+        Serial.println(" DS18B20 desconectado");
         return 25.0;  // Valor por defecto
     }
     
