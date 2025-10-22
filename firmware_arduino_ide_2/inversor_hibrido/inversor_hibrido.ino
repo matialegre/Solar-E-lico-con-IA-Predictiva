@@ -21,6 +21,7 @@
 #include "relays.h"
 #include "protection.h"
 #include "http_client.h"
+#include "web_server.h"
 
 // ===== VARIABLES GLOBALES =====
 unsigned long lastSendTime = 0;
@@ -28,6 +29,9 @@ unsigned long lastCommandCheck = 0;
 unsigned long lastConfigCheck = 0;
 bool systemReady = false;
 bool estrategiaAutoActiva = true;  // Estrategia automática por defecto
+
+// ===== STAGE 1: Variables =====
+unsigned long lastStage1Time = 0;  // Para timing de 1 segundo
 
 // ===== SETUP =====
 void setup() {
@@ -71,6 +75,13 @@ void setup() {
   initHTTP();
   Serial.println("✅ Cliente HTTP listo");
   
+  // Iniciar servidor web local
+  Serial.println("🌐 Iniciando servidor web local...");
+  initWebServer();
+  Serial.println("✅ Servidor web listo");
+  Serial.print("   📱 Acceso: http://");
+  Serial.println(WiFi.localIP());
+  
   // Registrar dispositivo en servidor
   Serial.println("📝 Registrando dispositivo en servidor...");
   if (registerDevice()) {
@@ -100,6 +111,10 @@ void setup() {
   Serial.println("\n⏰ Intervalo telemetría: 5 seg");
   Serial.println("⏰ Intervalo comandos: 10 seg");
   Serial.println("⏰ Heartbeat: 30 seg");
+  Serial.println("\n🔬 STAGE 1 ACTIVE:");
+  Serial.println("   ⏱️  1Hz telemetry + commands");
+  Serial.println("   📊 Raw voltages (0-3.3V)");
+  Serial.println("   🎚️  Wind DC extraction (10Hz LP, Q=0.707)");
   Serial.println();
   
   systemReady = true;
@@ -115,6 +130,20 @@ void loop() {
   
   // Leer sensores constantemente
   readAllSensors();
+  
+  // ===== STAGE 1: Enviar telemetría + comandos cada 1 segundo =====
+  if (millis() - lastStage1Time >= STAGE1_INTERVAL) {
+    // 1. Enviar telemetría (POST)
+    sendStage1Telemetry();
+    
+    // 2. Verificar comandos (GET)
+    checkStage1Commands();
+    
+    // 3. Print UART (2 líneas)
+    printStage1UART();
+    
+    lastStage1Time = millis();
+  }
   
   // Monitorear protección contra embalamiento
   if (config_dinamica.proteccion_activa) {

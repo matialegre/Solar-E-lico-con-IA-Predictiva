@@ -6,10 +6,12 @@ import ControlPanel from './components/ControlPanel';
 import AlertsPanel from './components/AlertsPanel';
 import WeatherWidget from './components/WeatherWidget';
 import PredictionPanel from './components/PredictionPanel';
-import LocationMap from './components/LocationMap';
-import WeatherForecastFixed from './components/WeatherForecastFixed';
-import MarketingInfo from './components/MarketingInfo';
-import HardwareInfo from './components/HardwareInfo';
+import ESP32Status from './components/ESP32Status';
+import ESP32LiveData from './components/ESP32LiveData';
+import ESP32RawData from './components/ESP32RawData';
+import SetupWizard from './components/SetupWizard';
+import ProjectInfo from './components/ProjectInfo';
+import HardwareTest from './components/HardwareTest';
 import LoadingScreen from './components/LoadingScreen';
 import SystemCalculator from './components/SystemCalculator';
 import PatternLearning from './components/PatternLearning';
@@ -19,6 +21,10 @@ import RecomendacionInicial from './components/RecomendacionInicial';
 import EfficiencyMonitor from './components/EfficiencyMonitor';
 import SmartStrategy from './components/SmartStrategy';
 import SystemStatus from './components/SystemStatus';
+import LocationMap from './components/LocationMap';
+import WeatherForecastFixed from './components/WeatherForecastFixed';
+import MarketingInfo from './components/MarketingInfo';
+import HardwareInfo from './components/HardwareInfo';
 import {
   getDashboardData,
   getEnergyHistory,
@@ -93,37 +99,6 @@ function App() {
     setLoading(false);
   }, [loadDashboardData, loadHistoryData, loadPredictions, loadSystemStatus]);
 
-  // Inicializar WebSocket
-  useEffect(() => {
-    // Conectar WebSocket
-    const ws = createWebSocket((data) => {
-        // Actualizar datos en tiempo real
-        if (data.type === 'update' && data.data) {
-          setDashboardData((prev) => ({
-            ...prev,
-            energy_status: {
-              ...prev?.energy_status,
-              ...data.data.energy,
-            },
-            weather: data.data.weather || prev?.weather,
-          }));
-        }
-      },
-      (error) => {
-        console.error('WebSocket error:', error);
-        setConnected(false);
-      }
-    );
-
-    setWs(ws);
-
-    return () => {
-      if (ws) {
-        ws.close();
-      }
-    };
-  }, []);
-
   // Cargar datos iniciales
   useEffect(() => {
     loadAllData();
@@ -166,6 +141,11 @@ function App() {
       <Header systemStatus={systemStatus} connected={connected} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Panel ESP32 */}
+        <div className="mb-8">
+          <ESP32Status />
+        </div>
+
         {/* Botón de actualizar */}
         <div className="flex justify-end mb-4">
           <button
@@ -250,6 +230,12 @@ function App() {
             {/* Columna derecha - 1/3 */}
           </div>
           <div className="space-y-8">
+            {/* Datos en Vivo ESP32 */}
+            <ESP32LiveData />
+
+            {/* Datos RAW ADCs */}
+            <ESP32RawData />
+
             {/* Clima */}
             <WeatherWidget weather={dashboardData?.weather} />
 
@@ -275,10 +261,10 @@ function App() {
       {/* RecomendacionInicial siempre visible */}
       <RecomendacionInicial />
       
-      {/* Panel de Estado del Sistema */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+      {/* Panel de Estado del Sistema - DESHABILITADO TEMPORALMENTE */}
+      {/* <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <SystemStatus />
-      </div>
+      </div> */}
       
       {/* Contenido principal */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">

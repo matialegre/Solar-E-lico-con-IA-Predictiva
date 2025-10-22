@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Wind, AlertTriangle, Shield, Zap, Thermometer, Activity, Power } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 
 const WindProtection = () => {
   const [protection, setProtection] = useState(null);
@@ -21,8 +21,8 @@ const WindProtection = () => {
       const voltage = 48 + Math.random() * 8; // 48-56V
       const rpm = 200 + Math.random() * 150; // 200-350 RPM
       
-      const response = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/wind/protection/status?wind_speed=${windSpeed}&voltage=${voltage}&rpm=${rpm}`
+      const response = await api.get(
+        `/api/wind/protection/status?wind_speed=${windSpeed}&voltage=${voltage}&rpm=${rpm}`
       );
       setProtection(response.data);
       setLoading(false);
@@ -34,7 +34,7 @@ const WindProtection = () => {
 
   const loadSpecs = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/wind/protection/specs`);
+      const response = await api.get('/api/wind/protection/specs');
       setSpecs(response.data);
     } catch (error) {
       console.error('Error loading specs:', error);
@@ -43,7 +43,7 @@ const WindProtection = () => {
 
   const activateBrake = async () => {
     try {
-      await axios.post(`${process.env.REACT_APP_API_URL}/api/wind/protection/brake/activate`, null, {
+      await api.post('/api/wind/protection/brake/activate', null, {
         params: { reason: 'Activación manual desde dashboard' }
       });
       loadProtectionStatus();

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Wind, Battery, Zap, TrendingUp, MapPin, Award, AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 
 const SystemCalculator = () => {
   const [calc, setCalc] = useState(null);
@@ -12,7 +12,7 @@ const SystemCalculator = () => {
 
   const loadCalculations = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/system/calculate`);
+      const response = await api.get('/api/system/calculate');
       setCalc(response.data);
       setLoading(false);
     } catch (error) {

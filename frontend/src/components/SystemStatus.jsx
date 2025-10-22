@@ -8,9 +8,7 @@ import {
   CheckCircle, XCircle, AlertCircle, RefreshCw, 
   Cloud, Satellite, Server, Activity, Brain, Zap
 } from 'lucide-react';
-import axios from 'axios';
-
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+import api from '../api/api';
 
 export default function SystemStatus() {
   const [status, setStatus] = useState(null);
@@ -21,8 +19,8 @@ export default function SystemStatus() {
   const fetchStatus = async () => {
     try {
       const [statusRes, forecastRes] = await Promise.all([
-        axios.get(`${API_URL}/api/status/health`),
-        axios.get(`${API_URL}/api/status/forecast`)
+        api.get('/api/status/health'),
+        api.get('/api/status/forecast')
       ]);
       
       setStatus(statusRes.data);
@@ -84,6 +82,23 @@ export default function SystemStatus() {
           <XCircle className="w-5 h-5 text-red-400" />
           <h3 className="text-lg font-bold">Error al verificar estado</h3>
         </div>
+      </div>
+    );
+  }
+
+  const weather = status?.services?.openweather || {};
+  const nasa = status?.services?.nasa_power || {};
+  const esp32 = status?.services?.esp32 || {};
+  const ml = status?.services?.ml || {};
+
+  const healthPercent = status && status.total_services > 0 ? 
+    Math.round((status.services_ok / status.total_services) * 100) : 0;
+
+  // Manejar casos donde no hay datos
+  if (!status || !status.services) {
+    return (
+      <div className="card bg-gray-800 border-2 border-gray-700 animate-pulse">
+        <div className="h-32 bg-gray-700 rounded"></div>
       </div>
     );
   }
@@ -180,6 +195,14 @@ export default function SystemStatus() {
                     </div>
                   </div>
                 )}
+                <p className="text-sm text-gray-400">
+                  Ubicación: {forecast?.location || 'Cargando...'}
+                </p>
+                {forecast?.current_day?.avg_temp && (
+                  <p className="text-sm text-gray-400">
+                    Temperatura: {forecast.current_day.avg_temp}°C
+                  </p>
+                )}
               </div>
             ) : (
               <div className="text-sm text-red-400">
@@ -201,7 +224,7 @@ export default function SystemStatus() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div className="p-3 bg-gray-900 rounded">
               <p className="text-sm text-gray-400 mb-1">Temp Promedio</p>
-              <p className="text-2xl font-bold">{forecast.summary.avg_temp.toFixed(1)}°C</p>
+              <p className="text-2xl font-bold">{forecast?.summary?.avg_temp?.toFixed(1) || 'N/A'}°C</p>
             </div>
             
             <div className="p-3 bg-gray-900 rounded">

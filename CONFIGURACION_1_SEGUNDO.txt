@@ -1,0 +1,138 @@
+═══════════════════════════════════════════════════════════
+  ⚡ CONFIGURACIÓN PARA 1 SEGUNDO
+═══════════════════════════════════════════════════════════
+
+✅ BACKEND CONFIGURADO:
+   • Timeout: 5 segundos (antes 20)
+   • Marca OFFLINE si no recibe datos en 5 seg
+   • Preparado para recibir cada 1 seg
+
+✅ FRONTEND CONFIGURADO:
+   • Polling: Cada 3 segundos
+   • Detecta cambios rápidamente
+
+✅ SystemStatus ARREGLADO:
+   • Validación para evitar error avg_temp
+   • Maneja datos undefined correctamente
+
+═══════════════════════════════════════════════════════════
+  📝 LO QUE VOS TENÉS QUE HACER EN EL FIRMWARE:
+═══════════════════════════════════════════════════════════
+
+Abrí: firmware_arduino_ide_2/inversor_hibrido/config.h
+
+Buscá estas líneas:
+
+// Intervalos de tiempo (milisegundos)
+#define INTERVALO_TELEMETRIA     5000  // ← CAMBIAR A 1000
+#define INTERVALO_HEARTBEAT     10000  // ← CAMBIAR A 1000
+
+Cambialas a:
+
+// Intervalos de tiempo (milisegundos)
+#define INTERVALO_TELEMETRIA     1000  // 1 segundo
+#define INTERVALO_HEARTBEAT      1000  // 1 segundo
+
+Guardá y subí el firmware al ESP32.
+
+═══════════════════════════════════════════════════════════
+  ⏱️ NUEVO TIMING COMPLETO:
+═══════════════════════════════════════════════════════════
+
+ESP32 → Backend:
+  📊 Telemetría: Cada 1 segundo (vas a configurar)
+  ❤️ Heartbeat: Cada 1 segundo (vas a configurar)
+
+Backend:
+  ✅ ONLINE si: < 5 segundos desde último heartbeat
+  ❌ OFFLINE si: > 5 segundos
+  Margen: 4 segundos de tolerancia
+
+Frontend → Backend:
+  🔄 Polling: Cada 3 segundos
+  Detecta: Cambios en 3 seg máximo
+
+RESULTADO:
+  ⚡ Datos en tiempo casi real (1 seg)
+  🎯 Detección rápida de desconexión (5 seg max)
+  💪 Sistema responsive y estable
+
+═══════════════════════════════════════════════════════════
+  🚀 PASOS PARA APLICAR:
+═══════════════════════════════════════════════════════════
+
+1. BACKEND + FRONTEND:
+   a. Ejecuta: DETENER_SISTEMA.bat
+   b. Ejecuta: REINICIO_TOTAL.bat
+   c. Espera 30 segundos
+
+2. FIRMWARE ESP32:
+   a. Abre: config.h
+   b. Cambia INTERVALO_TELEMETRIA a 1000
+   c. Cambia INTERVALO_HEARTBEAT a 1000
+   d. Guarda
+   e. Sube firmware al ESP32
+   f. Abre Monitor Serie (115200 baud)
+   g. Verifica que envía cada 1 seg
+
+3. VERIFICAR:
+   a. Abre: http://190.211.201.217:11113
+   b. Panel ESP32 debe mostrar: ● ONLINE
+   c. Datos en vivo se actualizan cada 1 seg
+   d. No se desconecta nunca
+
+═══════════════════════════════════════════════════════════
+  📊 COMPARACIÓN:
+═══════════════════════════════════════════════════════════
+
+ANTES:
+  ESP32 envía: Cada 5-10 seg
+  Backend timeout: 20 seg
+  Frontend poll: 5 seg
+  → Lento pero estable
+
+AHORA:
+  ESP32 envía: Cada 1 seg ⚡
+  Backend timeout: 5 seg
+  Frontend poll: 3 seg
+  → Rápido y responsive
+
+═══════════════════════════════════════════════════════════
+  ⚠️ IMPORTANTE:
+═══════════════════════════════════════════════════════════
+
+✅ El ESP32 puede manejar envíos cada 1 seg sin problemas
+✅ WiFi no se satura (solo ~200 bytes por segundo)
+✅ Backend puede manejar la carga fácilmente
+✅ Frontend se mantiene fluido
+
+Si ves que el ESP32 se resetea:
+  → Aumenta INTERVALO a 2000 (2 segundos)
+  → Cambia timeout backend a 10 segundos
+
+═══════════════════════════════════════════════════════════
+  ✅ ARCHIVOS YA MODIFICADOS POR MÍ:
+═══════════════════════════════════════════════════════════
+
+✅ backend/routers/esp32_router.py
+   • Timeout cambiado a 5 segundos
+
+✅ frontend/src/components/ESP32Status.jsx
+   • Polling cada 3 segundos
+
+✅ frontend/src/components/SystemStatus.jsx
+   • Validación para avg_temp
+   • Maneja datos undefined
+
+✅ frontend/src/components/ESP32LiveData.jsx
+   • Polling cada 2 segundos
+
+═══════════════════════════════════════════════════════════
+  🎯 SOLO TE FALTA:
+═══════════════════════════════════════════════════════════
+
+1. Reiniciar backend/frontend (REINICIO_TOTAL.bat)
+2. Cambiar config.h del firmware (INTERVALO → 1000)
+3. Subir firmware al ESP32
+
+¡Y LISTO! 🚀

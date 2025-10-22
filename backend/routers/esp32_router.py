@@ -98,6 +98,14 @@ async def receive_heartbeat(heartbeat: ESP32Heartbeat):
     if device_id in dispositivos_db:
         dispositivos_db[device_id]["last_seen"] = datetime.now().isoformat()
         dispositivos_db[device_id]["status"] = "online"
+    else:
+        # Si no existe, registrarlo automáticamente
+        dispositivos_db[device_id] = {
+            "device_id": device_id,
+            "last_seen": datetime.now().isoformat(),
+            "status": "online",
+            "registered_at": datetime.now().isoformat()
+        }
     
     return {
         "status": "ok",
@@ -112,18 +120,29 @@ async def list_devices():
     
     Usado por el frontend para mostrar dispositivos conectados
     """
-    # Marcar como offline los que no han enviado heartbeat en >60 seg
+    # Importar telemetría de main.py si existe
+    from main import recibir_telemetria_esp32
+    
+    # Marcar como offline los que no han enviado heartbeat en >5 seg
+    # ESP32 configurado para enviar cada 1 segundo
     now = datetime.now()
     for device_id, device in dispositivos_db.items():
         last_seen = datetime.fromisoformat(device["last_seen"])
         diff = (now - last_seen).total_seconds()
         
-        if diff > 60:
+        if diff > 5:  # 5 segundos de tolerancia (ESP32 envía cada 1 seg)
             device["status"] = "offline"
+        else:
+            device["status"] = "online"  # Marcar explícitamente como online
         
         # Agregar info de heartbeat si existe
         if device_id in heartbeat_db:
             device["heartbeat"] = heartbeat_db[device_id]
+        
+        # Agregar telemetría si existe
+        if hasattr(recibir_telemetria_esp32, 'devices') and device_id in recibir_telemetria_esp32.devices:
+            device["telemetry"] = recibir_telemetria_esp32.devices[device_id].get("telemetry")
+            device["relays"] = recibir_telemetria_esp32.devices[device_id].get("relays")
     
     return {
         "devices": list(dispositivos_db.values()),

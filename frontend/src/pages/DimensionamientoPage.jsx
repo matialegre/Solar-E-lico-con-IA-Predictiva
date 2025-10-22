@@ -8,7 +8,7 @@ import { Calculator, Zap, Wind, Battery, DollarSign, ArrowRight, ArrowLeft, Chec
 import axios from 'axios';
 import EquationDisplay from '../components/EquationDisplay';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://190.211.201.217:11112';
 
 export default function DimensionamientoPage() {
   const [step, setStep] = useState(1);
@@ -166,7 +166,7 @@ export default function DimensionamientoPage() {
                     type="number"
                     step="0.0001"
                     value={formOpcion1.latitude}
-                    onChange={(e) => setFormOpcion1({ ...formOpcion1, latitude: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormOpcion1({ ...formOpcion1, latitude: parseFloat(e.target.value) || 0 })}
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -176,7 +176,7 @@ export default function DimensionamientoPage() {
                     type="number"
                     step="0.0001"
                     value={formOpcion1.longitude}
-                    onChange={(e) => setFormOpcion1({ ...formOpcion1, longitude: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormOpcion1({ ...formOpcion1, longitude: parseFloat(e.target.value) || 0 })}
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -190,7 +190,7 @@ export default function DimensionamientoPage() {
                   type="number"
                   step="0.1"
                   value={formOpcion1.consumo_diario_kwh}
-                  onChange={(e) => setFormOpcion1({ ...formOpcion1, consumo_diario_kwh: parseFloat(e.target.value) })}
+                  onChange={(e) => setFormOpcion1({ ...formOpcion1, consumo_diario_kwh: parseFloat(e.target.value) || 0 })}
                   className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none text-xl font-bold"
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -206,7 +206,7 @@ export default function DimensionamientoPage() {
                   <input
                     type="number"
                     value={formOpcion1.dias_autonomia}
-                    onChange={(e) => setFormOpcion1({ ...formOpcion1, dias_autonomia: parseInt(e.target.value) })}
+                    onChange={(e) => setFormOpcion1({ ...formOpcion1, dias_autonomia: parseInt(e.target.value) || 0 })}
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -262,7 +262,7 @@ export default function DimensionamientoPage() {
                     type="number"
                     step="0.0001"
                     value={formOpcion2.latitude}
-                    onChange={(e) => setFormOpcion2({ ...formOpcion2, latitude: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormOpcion2({ ...formOpcion2, latitude: parseFloat(e.target.value) || 0 })}
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -272,7 +272,7 @@ export default function DimensionamientoPage() {
                     type="number"
                     step="0.0001"
                     value={formOpcion2.longitude}
-                    onChange={(e) => setFormOpcion2({ ...formOpcion2, longitude: parseFloat(e.target.value) })}
+                    onChange={(e) => setFormOpcion2({ ...formOpcion2, longitude: parseFloat(e.target.value) || 0 })}
                     className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
                   />
                 </div>
@@ -286,8 +286,9 @@ export default function DimensionamientoPage() {
                     <input
                       type="number"
                       value={formOpcion2.potencia_solar_w}
-                      onChange={(e) => setFormOpcion2({ ...formOpcion2, potencia_solar_w: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormOpcion2({ ...formOpcion2, potencia_solar_w: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-yellow-500 focus:outline-none"
+                      placeholder="Ej: 3000"
                     />
                   </div>
                   <div>
@@ -296,8 +297,9 @@ export default function DimensionamientoPage() {
                       type="number"
                       step="0.1"
                       value={formOpcion2.area_solar_m2}
-                      onChange={(e) => setFormOpcion2({ ...formOpcion2, area_solar_m2: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormOpcion2({ ...formOpcion2, area_solar_m2: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-yellow-500 focus:outline-none"
+                      placeholder="Ej: 15"
                     />
                   </div>
                 </div>
@@ -311,8 +313,9 @@ export default function DimensionamientoPage() {
                     <input
                       type="number"
                       value={formOpcion2.potencia_eolica_w}
-                      onChange={(e) => setFormOpcion2({ ...formOpcion2, potencia_eolica_w: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormOpcion2({ ...formOpcion2, potencia_eolica_w: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
+                      placeholder="Ej: 2000"
                     />
                   </div>
                   <div>
@@ -321,8 +324,9 @@ export default function DimensionamientoPage() {
                       type="number"
                       step="0.1"
                       value={formOpcion2.diametro_turbina_m}
-                      onChange={(e) => setFormOpcion2({ ...formOpcion2, diametro_turbina_m: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormOpcion2({ ...formOpcion2, diametro_turbina_m: parseFloat(e.target.value) || 0 })}
                       className="w-full px-4 py-2 bg-gray-900 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
+                      placeholder="Ej: 2.5"
                     />
                   </div>
                 </div>

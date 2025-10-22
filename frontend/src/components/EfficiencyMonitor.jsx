@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Activity, Sun, Wind, TrendingDown, TrendingUp, AlertTriangle, CheckCircle, Wrench } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 import DataSourceBadge from './DataSourceBadge';
 
 const EfficiencyMonitor = () => {
@@ -22,8 +22,8 @@ const EfficiencyMonitor = () => {
       const vientoVel = 6 + Math.random() * 6; // 6-12 m/s
       const potenciaEolica = 300 + Math.random() * 400; // 300-700 W
 
-      const response = await axios.get(
-        `${process.env.REACT_APP_API_URL}/api/efficiency/dashboard?` +
+      const response = await api.get(
+        `/api/efficiency/dashboard?` +
         `irradiancia_w_m2=${irradiancia}&` +
         `area_paneles_m2=6&` +
         `potencia_solar_w=${potenciaSolar}&` +

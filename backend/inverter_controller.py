@@ -87,15 +87,16 @@ class InverterController:
         available_energy_wh = (usable_soc / 100.0) * battery_capacity_wh
         
         # Consumo actual
-        current_consumption_w = self.current_state['load_power_w']
+        current_consumption_w = abs(self.current_state['load_power_w'])
         
-        if current_consumption_w <= 0:
-            return float('inf')
+        # Si no hay consumo, retornar valor muy alto pero finito (JSON compliant)
+        if current_consumption_w <= 10:  # Umbral mínimo 10W
+            return 999999.0  # Valor alto pero finito (≈114 años)
         
         # Horas disponibles
         autonomy_hours = available_energy_wh / current_consumption_w
         
-        return autonomy_hours
+        return min(autonomy_hours, 999999.0)  # Limitar a valor finito
     
     def make_decision(self) -> Dict:
         """

@@ -9,23 +9,26 @@
 #define CONFIG_H
 
 // ===== WiFi =====
-#define WIFI_SSID "TU_RED_WIFI"              // ← CAMBIAR
-#define WIFI_PASSWORD "TU_PASSWORD"           // ← CAMBIAR
+#define WIFI_SSID "MUNDO SAN MARTIN"
+#define WIFI_PASSWORD "63489026"
 #define WIFI_TIMEOUT_MS 20000                 // 20 segundos
 
 // ===== BACKEND (HTTP - SIN MQTT) =====
-// Opción A: IP Pública (recomendado)
-#define SERVER_URL "http://190.211.201.217:11113"
+// Opción A: IP Pública (✅ CONFIGURADO)
+#define SERVER_URL "http://190.211.201.217:11112"
 
-// Opción B: Ngrok (desarrollo)
+// Opción B: Ngrok (para desarrollo/pruebas)
 // #define SERVER_URL "https://argentina.ngrok.pro"
 
-// Opción C: IP Local (misma red)
-// #define SERVER_URL "http://192.168.0.100:11113"
+// Opción C: IP Local (solo si está en la misma red)
+// #define SERVER_URL "http://localhost:11113"
 
 #define DEVICE_ID "ESP32_INVERSOR_001"
 #define SEND_INTERVAL 5000                    // Enviar datos cada 5 seg
 #define COMMAND_CHECK_INTERVAL 10000          // Verificar comandos cada 10 seg
+
+// ===== STAGE 1: Intervals =====
+#define STAGE1_INTERVAL 1000                  // Stage 1: Send every 1 second
 
 // ===== PINES ADC (GPIO solo input) =====
 #define PIN_VOLTAJE_BAT1    34  // ADC1_CH6 - Voltaje batería 1

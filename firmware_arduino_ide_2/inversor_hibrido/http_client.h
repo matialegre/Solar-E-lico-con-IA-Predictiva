@@ -15,6 +15,13 @@
 
 HTTPClient http;
 
+// ===== STAGE 1: Variables globales =====
+static uint32_t stage1_seq = 0;           // Sequence number
+static uint32_t stage1_uplink_lost = 0;   // Total packets lost
+static int last_post_code = 0;            // Last POST HTTP code
+static int last_get_code = 0;             // Last GET HTTP code
+static String last_get_resp = "";         // Last GET response
+
 // Configuración dinámica (recibida del servidor)
 ConfigDinamica config_dinamica = {
   .latitude = -38.7183,
@@ -55,13 +62,25 @@ bool registerDevice() {
   
   bool success = (httpCode == 200 || httpCode == 201);
   
-  #ifdef DEBUG_HTTP
+  // SIEMPRE mostrar resultado (sin #ifdef DEBUG_HTTP)
+  Serial.println("\n================================================");
   if (success) {
-    Serial.printf("✅ Registro exitoso: %d\n", httpCode);
+    Serial.println("✅ ¡CONEXIÓN EXITOSA CON EL SERVIDOR!");
+    Serial.println("================================================");
+    Serial.printf("   📡 Dispositivo: %s\n", DEVICE_ID);
+    Serial.printf("   🌐 Servidor: %s\n", SERVER_URL);
+    Serial.printf("   ✅ Código HTTP: %d (OK)\n", httpCode);
+    Serial.println("   🔗 El servidor confirmó el registro");
+    Serial.println("================================================\n");
   } else {
-    Serial.printf("❌ Error registro: %d\n", httpCode);
+    Serial.println("❌ ERROR AL CONECTAR CON EL SERVIDOR");
+    Serial.println("================================================");
+    Serial.printf("   📡 Dispositivo: %s\n", DEVICE_ID);
+    Serial.printf("   🌐 Servidor: %s\n", SERVER_URL);
+    Serial.printf("   ❌ Código HTTP: %d\n", httpCode);
+    Serial.println("   ⚠️  Verifica que el servidor esté corriendo");
+    Serial.println("================================================\n");
   }
-  #endif
   
   http.end();
   return success;
@@ -95,7 +114,114 @@ void sendHeartbeat() {
   http.end();
 }
 
-// ===== ENVIAR TELEMETRÍA =====
+// ===== STAGE 1: Enviar telemetría simplificada =====
+void sendStage1Telemetry() {
+  if (WiFi.status() != WL_CONNECTED) {
+    last_post_code = -1;
+    return;
+  }
+  
+  // Crear JSON Stage 1 (minimal)
+  StaticJsonDocument<256> doc;
+  doc["device_id"] = DEVICE_ID;
+  doc["seq"] = stage1_seq;
+  doc["ts"] = millis() / 1000;  // epoch en segundos
+  doc["v_bat_v"] = sensores.v_bat_v;
+  doc["v_wind_v_dc"] = sensores.v_wind_v_dc;
+  doc["v_solar_v"] = sensores.v_solar_v;
+  doc["v_load_v"] = sensores.v_load_v;
+  
+  String jsonString;
+  serializeJson(doc, jsonString);
+  
+  String url = String(SERVER_URL) + "/api/esp32/telemetry";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  
+  int httpCode = http.POST(jsonString);
+  last_post_code = httpCode;
+  
+  // Si éxito (2xx), incrementar seq. Si error, mantener seq para retry
+  if (httpCode >= 200 && httpCode < 300) {
+    stage1_seq++;
+  }
+  
+  http.end();
+}
+
+// ===== STAGE 1: Verificar comandos =====
+void checkStage1Commands() {
+  if (WiFi.status() != WL_CONNECTED) {
+    last_get_code = -1;
+    last_get_resp = "{\"status\":\"ERROR\"}";
+    return;
+  }
+  
+  String url = String(SERVER_URL) + "/api/esp32/commands/" + String(DEVICE_ID);
+  http.begin(url);
+  
+  int httpCode = http.GET();
+  last_get_code = httpCode;
+  
+  if (httpCode == 200) {
+    last_get_resp = http.getString();
+    
+    // Truncar respuesta si es muy larga
+    if (last_get_resp.length() > 80) {
+      last_get_resp = last_get_resp.substring(0, 77) + "...";
+    }
+    
+    // Parsear y ejecutar comandos si existen
+    StaticJsonDocument<512> doc;
+    DeserializationError error = deserializeJson(doc, last_get_resp);
+    
+    if (!error && doc.containsKey("commands")) {
+      JsonArray commands = doc["commands"];
+      for (JsonVariant cmdObj : commands) {
+        String command = cmdObj["command"].as<String>();
+        String param = cmdObj.containsKey("parameter") ? cmdObj["parameter"].as<String>() : "";
+        
+        // Ejecutar comandos (reusa lógica existente)
+        if (command == "reboot") {
+          delay(3000);
+          ESP.restart();
+        }
+      }
+    }
+  } else {
+    last_get_resp = "{\"status\":\"ERROR\",\"code\":" + String(httpCode) + "}";
+  }
+  
+  http.end();
+}
+
+// ===== STAGE 1: UART print =====
+void printStage1UART() {
+  // Línea 1: Datos de sensores
+  Serial.print("[ESP32] seq=");
+  Serial.print(stage1_seq);
+  Serial.print("  Vbat=");
+  Serial.print(sensores.v_bat_v, 3);
+  Serial.print("V  Vwind_DC=");
+  Serial.print(sensores.v_wind_v_dc, 3);
+  Serial.print("V  Vsolar=");
+  Serial.print(sensores.v_solar_v, 3);
+  Serial.print("V  Vload=");
+  Serial.print(sensores.v_load_v, 3);
+  Serial.println("V");
+  
+  // Línea 2: Estado HTTP
+  Serial.print("POST ");
+  Serial.print(last_post_code);
+  Serial.print(" | GET ");
+  Serial.print(last_get_code);
+  Serial.print(" | Resp=");
+  Serial.print(last_get_resp);
+  Serial.print(" | Lost=");
+  Serial.println(stage1_uplink_lost);
+}
+
+// ===== ENVIAR TELEMETRÍA ORIGINAL (mantener para compatibilidad) =====
 void sendTelemetry() {
   if (WiFi.status() != WL_CONNECTED) return;
   
@@ -143,6 +269,37 @@ void sendTelemetry() {
   // Estado de protección
   doc["proteccion_estado"] = getProtectionStatus();
   doc["embalamiento_detectado"] = protection_state.embalamiento_detectado;
+  
+  // ===== VALORES RAW DE ADCs (0-3.3V REALES) =====
+  JsonObject raw_adc = doc.createNestedObject("raw_adc");
+  
+  // ADC1 - Batería 1 (GPIO34)
+  raw_adc["adc1_bat1"] = (sensores.adc_bat1 * 3.3) / 4095.0;
+  raw_adc["adc1_bat1_raw"] = sensores.adc_bat1;
+  
+  // ADC2 - Batería 2 (GPIO35)
+  raw_adc["adc2_bat2"] = (sensores.adc_bat2 * 3.3) / 4095.0;
+  raw_adc["adc2_bat2_raw"] = sensores.adc_bat2;
+  
+  // ADC3 - Batería 3 (GPIO32)
+  raw_adc["adc3_bat3"] = (sensores.adc_bat3 * 3.3) / 4095.0;
+  raw_adc["adc3_bat3_raw"] = sensores.adc_bat3;
+  
+  // ADC4 - Corriente Solar (GPIO33)
+  raw_adc["adc4_solar"] = (sensores.adc_solar * 3.3) / 4095.0;
+  raw_adc["adc4_solar_raw"] = sensores.adc_solar;
+  
+  // ADC5 - Corriente Eólica (GPIO36)
+  raw_adc["adc5_wind"] = (sensores.adc_eolica * 3.3) / 4095.0;
+  raw_adc["adc5_wind_raw"] = sensores.adc_eolica;
+  
+  // ADC6 - Corriente Consumo (GPIO39)
+  raw_adc["adc6_load"] = (sensores.adc_consumo * 3.3) / 4095.0;
+  raw_adc["adc6_load_raw"] = sensores.adc_consumo;
+  
+  // ADC7 - LDR Irradiancia (GPIO25)
+  raw_adc["adc7_ldr"] = (sensores.adc_ldr * 3.3) / 4095.0;
+  raw_adc["adc7_ldr_raw"] = sensores.adc_ldr;
   
   // Serializar
   String jsonString;

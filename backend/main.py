@@ -1,4 +1,4 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -7,6 +7,7 @@ from typing import List
 from datetime import datetime, timedelta
 import asyncio
 import json
+from pathlib import Path
 
 from database import get_db, init_db, EnergyRecord, WeatherData, Prediction, AIDecision, Alert
 from schemas import (
@@ -17,6 +18,7 @@ from config import get_settings, get_user_config
 from inverter_controller import inverter_controller
 from weather_service import weather_service
 from ai_predictor import energy_predictor
+from recommendation_service import recommendation_service
 from system_calculator import get_system_calculator
 from pattern_learner import pattern_learner
 from wind_protection import wind_protection
@@ -36,13 +38,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS
+# CORS - Permitir todos los orígenes para pruebas remotas
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Servir archivos estáticos del frontend (si existen)
@@ -675,22 +678,49 @@ async def api_root():
 # ===== CONFIGURACIÓN DE USUARIO =====
 
 @app.get("/api/configuracion/usuario")
-async def obtener_configuracion_usuario():
+async def obtener_configuracion():
     """
-    Obtiene la configuración personalizada del usuario
+    Obtener configuración del usuario
     """
-    user_config = get_user_config()
-    if user_config:
+    # Intentar leer desde archivo si existe
+    config_file = Path("user_config.json")
+    if config_file.exists():
+        import json
+        with open(config_file, 'r') as f:
+            return json.load(f)
+    
+    # Si no existe, devolver configuración por defecto
+    config = get_user_config()
+    return config
+
+
+@app.post("/api/configuracion/usuario")
+async def guardar_configuracion(config: dict):
+    """
+    Guardar configuración del usuario
+    """
+    try:
+        import json
+        from pathlib import Path
+        
+        # Guardar en archivo JSON
+        config_file = Path("user_config.json")
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+        
+        print(f"✅ Configuración guardada:")
+        print(f"   📍 Ubicación: ({config.get('latitude')}, {config.get('longitude')})")
+        print(f"   ⚙️ Modo: {config.get('mode')}")
+        
         return {
             'status': 'success',
-            'configurado': True,
-            'configuracion': user_config
+            'message': 'Configuración guardada correctamente'
         }
-    else:
+    except Exception as e:
+        print(f"❌ Error guardando configuración: {e}")
         return {
-            'status': 'not_configured',
-            'configurado': False,
-            'mensaje': 'No hay configuración personalizada. Ejecuta CONFIGURAR_SISTEMA.bat'
+            'status': 'error',
+            'message': str(e)
         }
 
 
@@ -850,39 +880,95 @@ async def recibir_telemetria_esp32(data: dict):
     """
     Recibir telemetría desde ESP32
     
-    Formato esperado:
+    STAGE 1 Format:
     {
         "device_id": "ESP32_001",
-        "timestamp": "2025-10-21T08:00:00",
-        "solar": {"voltage": 48.2, "current": 12.5, "power": 602.5, "irradiance": 850},
-        "wind": {"voltage": 47.8, "current": 5.2, "power": 248.5, "wind_speed": 8.5},
-        "battery": {"voltage": 50.1, "current": 8.3, "power": 415.8, "soc": 65.5},
-        "load_power_w": 435.0,
-        "temperature_c": 22.5
+        "seq": 123,
+        "ts": 1234567890,
+        "v_bat_v": 2.145,
+        "v_wind_v_dc": 1.650,
+        "v_solar_v": 1.234,
+        "v_load_v": 1.890
     }
+    
+    Legacy format also supported for compatibility.
     """
     try:
         device_id = data.get('device_id', 'UNKNOWN')
         
-        # Actualizar estado del controlador con datos reales
-        inverter_controller.current_state.update({
-            'solar_power_w': data.get('solar', {}).get('power', 0),
-            'wind_power_w': data.get('wind', {}).get('power', 0),
-            'battery_voltage_v': data.get('battery', {}).get('voltage', 48.0),
-            'battery_soc_percent': data.get('battery', {}).get('soc', 50.0),
-            'battery_power_w': data.get('battery', {}).get('power', 0),
-            'load_power_w': data.get('load_power_w', 0),
-            'timestamp': data.get('timestamp', datetime.now().isoformat())
-        })
+        # ===== STAGE 1: Packet loss tracking =====
+        if 'seq' in data:
+            seq = data.get('seq', 0)
+            
+            # Track packet loss
+            if not hasattr(recibir_telemetria_esp32, 'last_seq'):
+                recibir_telemetria_esp32.last_seq = {}
+                recibir_telemetria_esp32.uplink_lost = {}
+            
+            if device_id in recibir_telemetria_esp32.last_seq:
+                expected_seq = recibir_telemetria_esp32.last_seq[device_id] + 1
+                if seq > expected_seq:
+                    lost = seq - expected_seq
+                    recibir_telemetria_esp32.uplink_lost[device_id] = recibir_telemetria_esp32.uplink_lost.get(device_id, 0) + lost
+                elif seq < expected_seq:
+                    # Duplicate/out of order - don't count as lost
+                    pass
+            else:
+                recibir_telemetria_esp32.uplink_lost[device_id] = 0
+            
+            recibir_telemetria_esp32.last_seq[device_id] = seq
+            
+            # Console log Stage 1 format
+            v_bat = data.get('v_bat_v', 0.0)
+            v_wind = data.get('v_wind_v_dc', 0.0)
+            v_solar = data.get('v_solar_v', 0.0)
+            v_load = data.get('v_load_v', 0.0)
+            ts = data.get('ts', 0)
+            lost_total = recibir_telemetria_esp32.uplink_lost.get(device_id, 0)
+            
+            print(f"[TELEM] {device_id} seq={seq} ts={ts} Vbat={v_bat:.3f}V Vwind_DC={v_wind:.3f}V Vsolar={v_solar:.3f}V Vload={v_load:.3f}V Lost={lost_total} | OK")
         
-        # Broadcast a clientes WebSocket
-        await manager.broadcast({
-            'type': 'esp32_update',
-            'device_id': device_id,
-            'data': data
-        })
+        device_id = data.get('device_id', 'UNKNOWN')
         
-        print(f"📡 Telemetría recibida de {device_id}")
+        # Registrar dispositivo
+        if not hasattr(recibir_telemetria_esp32, 'devices'):
+            recibir_telemetria_esp32.devices = {}
+        
+        recibir_telemetria_esp32.devices[device_id] = {
+            'last_seen': datetime.now().isoformat(),
+            'telemetry': {
+                'battery_voltage': data.get('voltaje_promedio', 0),
+                'battery_soc': data.get('soc', 0),
+                'solar_power': data.get('potencia_solar', 0),
+                'wind_power': data.get('potencia_eolica', 0),
+                'load_power': data.get('potencia_consumo', 0),
+                'temperature': data.get('temperatura', 0)
+            },
+            'relays': {
+                'solar': data.get('relays', {}).get('solar', False),
+                'wind': data.get('relays', {}).get('eolica', False),
+                'grid': data.get('relays', {}).get('red', False),
+                'load': data.get('relays', {}).get('carga', False)
+            },
+            'raw_adc': {
+                'adc1_bat1': data.get('raw_adc', {}).get('adc1_bat1', 0),
+                'adc1_bat1_raw': data.get('raw_adc', {}).get('adc1_bat1_raw', 0),
+                'adc2_bat2': data.get('raw_adc', {}).get('adc2_bat2', 0),
+                'adc2_bat2_raw': data.get('raw_adc', {}).get('adc2_bat2_raw', 0),
+                'adc3_bat3': data.get('raw_adc', {}).get('adc3_bat3', 0),
+                'adc3_bat3_raw': data.get('raw_adc', {}).get('adc3_bat3_raw', 0),
+                'adc4_solar': data.get('raw_adc', {}).get('adc4_solar', 0),
+                'adc4_solar_raw': data.get('raw_adc', {}).get('adc4_solar_raw', 0),
+                'adc5_wind': data.get('raw_adc', {}).get('adc5_wind', 0),
+                'adc5_wind_raw': data.get('raw_adc', {}).get('adc5_wind_raw', 0),
+                'adc6_load': data.get('raw_adc', {}).get('adc6_load', 0),
+                'adc6_load_raw': data.get('raw_adc', {}).get('adc6_load_raw', 0),
+                'adc7_ldr': data.get('raw_adc', {}).get('adc7_ldr', 0),
+                'adc7_ldr_raw': data.get('raw_adc', {}).get('adc7_ldr_raw', 0)
+            }
+        }
+        
+        print(f"✅ {device_id} actualizado - Voltaje: {data.get('voltaje_promedio', 0)}V")
         
         return {
             'status': 'success',
@@ -897,6 +983,38 @@ async def recibir_telemetria_esp32(data: dict):
             'status': 'error',
             'message': str(e)
         }
+
+
+@app.get("/api/esp32/devices")
+async def listar_dispositivos_esp32():
+    """
+    Listar todos los dispositivos ESP32 conectados/conocidos
+    """
+    if not hasattr(recibir_telemetria_esp32, 'devices'):
+        recibir_telemetria_esp32.devices = {}
+    
+    devices = []
+    now = datetime.now()
+    
+    for device_id, info in recibir_telemetria_esp32.devices.items():
+        last_seen = datetime.fromisoformat(info['last_seen'])
+        seconds_ago = (now - last_seen).total_seconds()
+        is_online = seconds_ago < 30  # Offline si no se ve en 30 seg (era 60)
+        
+        devices.append({
+            'device_id': device_id,
+            'is_online': is_online,
+            'last_seen': info['last_seen'],
+            'seconds_since_last_seen': int(seconds_ago),
+            'telemetry': info.get('telemetry'),
+            'relays': info.get('relays')
+        })
+    
+    return {
+        'status': 'success',
+        'devices': devices,
+        'count': len(devices)
+    }
 
 
 @app.get("/api/esp32/status/{device_id}")
@@ -955,8 +1073,8 @@ async def obtener_comandos_esp32(device_id: str):
     """
     ESP32 pregunta si hay comandos pendientes (HTTP Polling)
     
-    El ESP32 hace GET cada X segundos para ver si hay comandos nuevos.
-    Esto funciona sin abrir puertos en el router del ESP32.
+    STAGE 1: Retorna {"status":"OK"} si no hay comandos,
+             {"status":"CMD", "commands":[...]} si hay comandos
     """
     # Obtener comandos de la cola
     if hasattr(enviar_comando_esp32, 'command_queue'):
@@ -967,21 +1085,261 @@ async def obtener_comandos_esp32(device_id: str):
             enviar_comando_esp32.command_queue[device_id] = []
         
         if commands:
-            print(f"📩 Entregando {len(commands)} comando(s) a {device_id}")
+            # Log command sent (Stage 1)
+            cmd_str = ", ".join([c.get("command", "unknown") for c in commands])
+            print(f"[CMD] {device_id} → Sent: {cmd_str}")
+            
+            return {
+                'status': 'CMD',
+                'device_id': device_id,
+                'commands': commands,
+                'count': len(commands)
+            }
+    
+    # No commands - return OK status (Stage 1)
+    return {
+        'status': 'OK',
+        'device_id': device_id,
+        'commands': [],
+        'count': 0
+    }
+
+
+# ===== ENDPOINTS DE PRUEBA DE HARDWARE =====
+
+@app.get("/api/hardware/test")
+async def obtener_datos_hardware_test():
+    """
+    Obtener datos de prueba de hardware (ADCs y relés)
+    """
+    try:
+        # Simular datos de ADCs (en producción vendrían del ESP32)
+        adcs = [
+            {
+                'pin': 'GPIO34',
+                'channel': 'ADC1_CH6',
+                'function': 'Voltaje Batería 1',
+                'raw_value': 3250,
+                'converted_value': '47.5V',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO35',
+                'channel': 'ADC1_CH7',
+                'function': 'Voltaje Batería 2',
+                'raw_value': 3280,
+                'converted_value': '48.0V',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO32',
+                'channel': 'ADC1_CH4',
+                'function': 'Voltaje Batería 3',
+                'raw_value': 3265,
+                'converted_value': '47.8V',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO33',
+                'channel': 'ADC1_CH5',
+                'function': 'Corriente Solar',
+                'raw_value': 2250,
+                'converted_value': '14.8A',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO36',
+                'channel': 'ADC1_CH0',
+                'function': 'Corriente Eólica',
+                'raw_value': 2180,
+                'converted_value': '9.5A',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO39',
+                'channel': 'ADC1_CH3',
+                'function': 'Corriente Consumo',
+                'raw_value': 2350,
+                'converted_value': '22.1A',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO25',
+                'channel': 'ADC2_CH8',
+                'function': 'Irradiancia (LDR)',
+                'raw_value': 2900,
+                'converted_value': '850 W/m²',
+                'is_connected': True
+            },
+            {
+                'pin': 'GPIO26',
+                'channel': 'GPIO',
+                'function': 'Velocidad Viento',
+                'raw_value': 0,
+                'converted_value': '6.5 m/s',
+                'is_connected': True
+            }
+        ]
+        
+        # Estado de relés actual
+        relays = {
+            'solar': True,
+            'wind': True,
+            'grid': False,
+            'load': True,
+            'brake': False
+        }
+        
+        # Cargar umbrales guardados
+        import json
+        from pathlib import Path
+        thresholds_file = Path("protection_thresholds.json")
+        if thresholds_file.exists():
+            with open(thresholds_file, 'r') as f:
+                thresholds = json.load(f)
+        else:
+            thresholds = {
+                'max_wind_speed': 25.0,
+                'max_wind_power': 2000,
+                'max_voltage': 65.0,
+                'brake_enabled': True
+            }
+        
+        # Estado actual del generador (simular)
+        current_wind_speed = 6.5
+        current_wind_power = 450
+        current_voltage = 48.2
         
         return {
             'status': 'success',
-            'device_id': device_id,
-            'commands': commands,
-            'count': len(commands)
+            'timestamp': datetime.now().isoformat(),
+            'adcs': adcs,
+            'relays': relays,
+            'thresholds': thresholds,
+            'current_wind_speed': current_wind_speed,
+            'current_wind_power': current_wind_power,
+            'current_voltage': current_voltage
         }
-    else:
+    except Exception as e:
+        print(f"❌ Error en hardware test: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+@app.post("/api/hardware/relay")
+async def controlar_rele(request: dict):
+    """
+    Controlar estado de un relé
+    """
+    try:
+        relay_name = request.get('relay')
+        state = request.get('state')
+        
+        print(f"🔌 Control relé: {relay_name} → {'ON' if state else 'OFF'}")
+        
+        # TODO: Enviar comando al ESP32
+        
         return {
             'status': 'success',
-            'device_id': device_id,
-            'commands': [],
-            'count': 0
+            'relay': relay_name,
+            'state': state,
+            'message': f"Relé {relay_name} {'activado' if state else 'desactivado'}"
         }
+    except Exception as e:
+        print(f"❌ Error controlando relé: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+@app.post("/api/hardware/thresholds")
+async def guardar_umbrales_proteccion(request: dict):
+    """
+    Guardar umbrales de protección contra embalamiento
+    """
+    try:
+        import json
+        from pathlib import Path
+        
+        thresholds = {
+            'max_wind_speed': request.get('max_wind_speed', 25.0),
+            'max_wind_power': request.get('max_wind_power', 2000),
+            'max_voltage': request.get('max_voltage', 65.0),
+            'brake_enabled': request.get('brake_enabled', True)
+        }
+        
+        # Guardar en archivo
+        config_file = Path("protection_thresholds.json")
+        with open(config_file, 'w') as f:
+            json.dump(thresholds, f, indent=2)
+        
+        print(f"✅ Umbrales de protección guardados:")
+        print(f"   💨 Viento máx: {thresholds['max_wind_speed']} m/s")
+        print(f"   ⚡ Potencia máx: {thresholds['max_wind_power']} W")
+        print(f"   🔌 Voltaje máx: {thresholds['max_voltage']} V")
+        print(f"   🛡️ Protección: {'ACTIVA' if thresholds['brake_enabled'] else 'INACTIVA'}")
+        
+        return {
+            'status': 'success',
+            'message': 'Umbrales guardados correctamente',
+            'thresholds': thresholds
+        }
+    except Exception as e:
+        print(f"❌ Error guardando umbrales: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+# ===== ENDPOINT DE DATOS CLIMÁTICOS NASA =====
+
+@app.get("/api/climate/historical")
+async def obtener_datos_climaticos(latitude: float, longitude: float, years: int = 5):
+    """
+    Obtener datos climáticos históricos de NASA POWER
+    """
+    try:
+        from nasa_power_service import nasa_power_service
+        data = nasa_power_service.get_prediction_model_data(latitude, longitude)
+        return data
+    except Exception as e:
+        print(f"❌ Error obteniendo datos climáticos: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+# ===== ENDPOINTS DE RECOMENDACIONES =====
+
+@app.post("/api/recommendation/by-demand")
+async def recomendar_por_demanda(request: dict):
+    """
+    Recomendar equipamiento según demanda de potencia
+    """
+    try:
+        result = recommendation_service.calculate_by_demand(
+            target_power_w=request.get('target_power_w', 3000),
+            latitude=request.get('latitude', -38.7183),
+            longitude=request.get('longitude', -62.2663)
+        )
+        return result
+    except Exception as e:
+        print(f"❌ Error en recomendación por demanda: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+@app.post("/api/recommendation/by-resources")
+async def recomendar_por_recursos(request: dict):
+    """
+    Calcular potencial según recursos existentes
+    """
+    try:
+        result = recommendation_service.calculate_by_resources(
+            solar_panel_w=request.get('solar_panel_w', 0),
+            solar_panel_area_m2=request.get('solar_panel_area_m2', 0),
+            wind_turbine_w=request.get('wind_turbine_w', 0),
+            wind_turbine_diameter_m=request.get('wind_turbine_diameter_m', 0),
+            battery_capacity_wh=request.get('battery_capacity_wh', 0),
+            latitude=request.get('latitude', -38.7183),
+            longitude=request.get('longitude', -62.2663)
+        )
+        return result
+    except Exception as e:
+        print(f"❌ Error en recomendación por recursos: {e}")
+        return {'status': 'error', 'message': str(e)}
 
 
 if __name__ == "__main__":

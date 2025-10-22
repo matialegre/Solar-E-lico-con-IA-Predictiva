@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Brain, TrendingUp, Clock, Zap, AlertTriangle, CheckCircle, Battery } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 
 const PatternLearning = () => {
   const [patterns, setPatterns] = useState(null);
@@ -17,9 +17,9 @@ const PatternLearning = () => {
   const loadAll = async () => {
     try {
       const [patternsRes, predictionsRes, recommendationRes] = await Promise.all([
-        axios.get(`${process.env.REACT_APP_API_URL}/api/patterns/analyze`),
-        axios.get(`${process.env.REACT_APP_API_URL}/api/patterns/predict?hours=6`),
-        axios.get(`${process.env.REACT_APP_API_URL}/api/patterns/battery-recommendation`)
+        api.get('/api/patterns/analyze'),
+        api.get('/api/patterns/predict?hours=6'),
+        api.get('/api/patterns/battery-recommendation')
       ]);
       
       setPatterns(patternsRes.data);

@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { Activity, Wifi, WifiOff, MapPin, Settings, Trash2, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_URL = process.env.REACT_APP_API_URL || 'http://190.211.201.217:11112';
 
 export default function DispositivosPage() {
   const [devices, setDevices] = useState([]);

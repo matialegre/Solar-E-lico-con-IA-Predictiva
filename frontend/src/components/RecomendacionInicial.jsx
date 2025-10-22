@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sun, Wind, Battery, Zap, CheckCircle, AlertTriangle, Settings, ExternalLink } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 import DataSourceBadge from './DataSourceBadge';
 
 const RecomendacionInicial = () => {
@@ -14,7 +14,7 @@ const RecomendacionInicial = () => {
 
   const loadConfig = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/configuracion/usuario`);
+      const response = await api.get('/api/configuracion/usuario');
       setConfig(response.data);
       setLoading(false);
     } catch (error) {

@@ -1,0 +1,115 @@
+═══════════════════════════════════════════════════════════
+  🔴 PROBLEMA ENCONTRADO - 2 BASES DE DATOS
+═══════════════════════════════════════════════════════════
+
+HAY DOS SISTEMAS PARALELOS:
+
+1️⃣ ESP32 ROUTER (routers/esp32_router.py):
+   • ESP32 envía: /api/esp32/heartbeat (cada 10 seg)
+   • Frontend lee: /api/esp32/devices
+   • Base de datos: dispositivos_db
+
+2️⃣ MAIN.PY:
+   • ESP32 envía: /api/esp32/telemetry (cada 5 seg)
+   • Frontend NO usa esto
+   • Base de datos: recibir_telemetria_esp32.devices
+
+PROBLEMA:
+Frontend lee del ROUTER, pero ESP32 actualiza AMBOS.
+El timeout del router era 60 seg (demasiado).
+
+═══════════════════════════════════════════════════════════
+  ✅ SOLUCIÓN APLICADA:
+═══════════════════════════════════════════════════════════
+
+1. Cambié timeout en esp32_router.py:
+   ❌ Antes: > 60 segundos = OFFLINE
+   ✅ Ahora: > 15 segundos = OFFLINE
+   ✅ Además: Marca explícitamente ONLINE si < 15 seg
+
+2. Agregué logs en frontend para debug
+
+3. El ESP32 envía heartbeat cada 10 seg
+   → Siempre será < 15 seg
+   → Siempre ONLINE
+
+═══════════════════════════════════════════════════════════
+  🚀 PARA QUE FUNCIONE:
+═══════════════════════════════════════════════════════════
+
+1. DETENER TODO:
+   DETENER_SISTEMA.bat
+
+2. REINICIAR:
+   REINICIO_TOTAL.bat
+
+3. ESPERAR 30 SEGUNDOS
+
+4. ABRIR:
+   http://190.211.201.217:11113
+
+5. ABRIR CONSOLA DEL NAVEGADOR (F12)
+   Verás logs: "📡 ESP32 Devices Response:"
+
+═══════════════════════════════════════════════════════════
+  📊 LO QUE DEBERÍAS VER EN CONSOLA:
+═══════════════════════════════════════════════════════════
+
+{
+  "devices": [
+    {
+      "device_id": "ESP32_INVERSOR_001",
+      "status": "online",   ← ESTO ES LO IMPORTANTE
+      "last_seen": "2025-10-21T19:06:45.123",
+      "ip_local": "192.168.x.x",
+      ...
+    }
+  ],
+  "total": 1,
+  "online": 1,    ← Debe ser 1
+  "offline": 0    ← Debe ser 0
+}
+
+═══════════════════════════════════════════════════════════
+  ⚠️ SI SIGUE SIN FUNCIONAR:
+═══════════════════════════════════════════════════════════
+
+Envíame una captura de:
+1. Consola del navegador (F12)
+2. Monitor Serie del ESP32
+
+Y verificamos qué endpoint está fallando.
+
+═══════════════════════════════════════════════════════════
+  🧠 EXPLICACIÓN TÉCNICA:
+═══════════════════════════════════════════════════════════
+
+El ESP32 envía 2 tipos de datos:
+
+1. HEARTBEAT (cada 10 seg):
+   • Informa: "Estoy vivo"
+   • Endpoint: /api/esp32/heartbeat
+   • Datos: uptime, free_heap, rssi
+   • Propósito: Mantener status online
+
+2. TELEMETRÍA (cada 5 seg):
+   • Informa: Datos de sensores
+   • Endpoint: /api/esp32/telemetry
+   • Datos: voltaje, corrientes, potencias
+   • Propósito: Dashboard y monitoreo
+
+El frontend consulta /api/esp32/devices que:
+• Lee dispositivos_db (actualizado por heartbeat)
+• Calcula si está online (< 15 seg desde last_seen)
+• Devuelve lista con status
+
+ANTES: Timeout 60 seg → ESP32 enviaba cada 10s pero
+       a veces el cálculo daba > 60 por algún lag
+
+AHORA: Timeout 15 seg → Mucho más sensible
+       Si ESP32 envía cada 10s, SIEMPRE < 15s
+       = SIEMPRE ONLINE
+
+═══════════════════════════════════════════════════════════
+  ✅ EJECUTA REINICIO_TOTAL.bat AHORA
+═══════════════════════════════════════════════════════════

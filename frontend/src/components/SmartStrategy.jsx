@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Brain, Calendar, Battery, AlertTriangle, CheckCircle, Wind, CloudRain, Sun, TrendingUp } from 'lucide-react';
-import axios from 'axios';
+import api from '../api/api';
 import DataSourceBadge from './DataSourceBadge';
 
 const SmartStrategy = () => {
@@ -15,7 +15,7 @@ const SmartStrategy = () => {
 
   const loadStrategy = async () => {
     try {
-      const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/strategy/smart`);
+      const response = await api.get('/api/strategy/smart');
       setStrategy(response.data);
       setLoading(false);
     } catch (error) {

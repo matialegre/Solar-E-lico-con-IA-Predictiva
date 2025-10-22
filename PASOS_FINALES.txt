@@ -1,0 +1,81 @@
+═══════════════════════════════════════════════════════════
+  PASOS PARA PONER TODO EN MARCHA
+═══════════════════════════════════════════════════════════
+
+1. PREPARAR FIRMWARE ESP32:
+   
+   a) Abrir Arduino IDE
+   b) Ir a: Tools → Manage Libraries
+   c) Buscar e instalar:
+      - ESPAsyncWebServer (by me-no-dev)
+      - AsyncTCP (by me-no-dev)
+      - ArduinoJson (by Benoit Blanchon)
+   
+   d) Abrir: firmware_arduino_ide_2/inversor_hibrido/inversor_hibrido.ino
+   e) Verificar config.h:
+      - WIFI_SSID: "MUNDO SAN MARTIN"
+      - WIFI_PASSWORD: "63489026"
+      - SERVER_URL: "http://190.211.201.217:11112"
+   
+   f) Compilar y subir al ESP32
+   
+   g) Abrir Monitor Serie (115200 baud)
+   
+   h) Deberías ver:
+      ✅ ¡CONEXIÓN EXITOSA CON EL SERVIDOR!
+      📡 Dispositivo: ESP32_INVERSOR_001
+      🌐 Servidor web iniciado
+         Acceso: http://[IP_LOCAL]
+
+2. INICIAR BACKEND Y FRONTEND:
+   
+   Ejecutar: INICIAR_IP_PUBLICA.bat
+   
+   Esperar a que arranquen:
+   - Backend en puerto 11112
+   - Frontend en puerto 11113
+
+3. ABRIR DASHBOARD:
+   
+   Navegador: http://190.211.201.217:11113
+   
+   Deberías ver ARRIBA:
+   ┌─────────────────────────────────────┐
+   │ 🔌 Estado de Conexión ESP32         │
+   │ ● ONLINE  ESP32_INVERSOR_001        │
+   │ ✅ CONECTADO AL SERVIDOR            │
+   └─────────────────────────────────────┘
+
+4. HACER CLICK EN:
+   
+   ⚙️ Configurar Sistema (Recomendaciones)
+   
+   Wizard aparecerá con 4 pasos:
+   - Paso 1: Ubicación
+   - Paso 2: Modo (Demanda o Recursos)
+   - Paso 3: Datos
+   - Paso 4: Recomendación
+
+5. VERIFICAR TODO FUNCIONA:
+   
+   ✓ Panel ESP32 muestra ONLINE verde
+   ✓ ID del dispositivo visible
+   ✓ Wizard se abre correctamente
+   ✓ Backend responde (ver consola Python)
+
+═══════════════════════════════════════════════════════════
+
+SI ALGO FALLA:
+
+- ESP32 no conecta al WiFi:
+  → Verificar SSID/password en config.h
+
+- Panel ESP32 muestra OFFLINE:
+  → Verificar que backend esté corriendo
+  → Verificar puerto 11112 abierto
+
+- Wizard no carga:
+  → Abrir consola del navegador (F12)
+  → Ver errores y reportar
+
+═══════════════════════════════════════════════════════════
