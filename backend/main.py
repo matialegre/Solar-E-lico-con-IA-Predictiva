@@ -54,7 +54,7 @@ try:
 except:
     pass  # Si no existe el directorio, no pasa nada
 
-# WebSocket connections manager
+# WebSocket connections manager (para frontend)
 class ConnectionManager:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
@@ -74,6 +74,149 @@ class ConnectionManager:
                 pass
 
 manager = ConnectionManager()
+
+# ===== WEBSOCKET MANAGER PARA ESP32 CON COLA PERSISTENTE Y ACK =====
+class ESP32WebSocketManager:
+    def __init__(self):
+        # {device_id: websocket}
+        self.connections: dict = {}
+        
+        # Cola persistente de comandos con estado ACK
+        # {device_id: [{"id": uuid, "command": str, "parameter": str, "status": "pending/sent/acked", "timestamp": str, "sent_at": str, "acked_at": str}]}
+        self.command_queue: dict = {}
+        
+        # Último comando ACK recibido por device
+        # {device_id: {"command_id": uuid, "timestamp": str}}
+        self.last_ack: dict = {}
+        
+    async def connect(self, device_id: str, websocket: WebSocket):
+        """Conectar un ESP32"""
+        await websocket.accept()
+        self.connections[device_id] = websocket
+        print(f"🔌 ESP32 WebSocket conectado: {device_id}")
+        
+        # Enviar comandos pendientes inmediatamente
+        await self.send_pending_commands(device_id)
+    
+    def disconnect(self, device_id: str):
+        """Desconectar un ESP32"""
+        if device_id in self.connections:
+            del self.connections[device_id]
+            print(f"🔌 ESP32 WebSocket desconectado: {device_id}")
+    
+    def enqueue_command(self, device_id: str, command: str, parameter: str = None) -> str:
+        """Encolar comando con ID único"""
+        import uuid
+        
+        if device_id not in self.command_queue:
+            self.command_queue[device_id] = []
+        
+        command_id = str(uuid.uuid4())
+        cmd_entry = {
+            "id": command_id,
+            "command": command,
+            "parameter": parameter,
+            "status": "pending",
+            "timestamp": datetime.now().isoformat(),
+            "sent_at": None,
+            "acked_at": None
+        }
+        
+        self.command_queue[device_id].append(cmd_entry)
+        print(f"📤 Comando encolado [{command_id[:8]}]: {command}({parameter})")
+        
+        return command_id
+    
+    async def send_pending_commands(self, device_id: str):
+        """Enviar comandos pendientes por WebSocket"""
+        if device_id not in self.connections:
+            return
+        
+        if device_id not in self.command_queue:
+            return
+        
+        websocket = self.connections[device_id]
+        pending_commands = [cmd for cmd in self.command_queue[device_id] if cmd["status"] == "pending"]
+        
+        for cmd in pending_commands:
+            try:
+                # Enviar comando con ID para tracking
+                message = {
+                    "type": "command",
+                    "id": cmd["id"],
+                    "command": cmd["command"],
+                    "parameter": cmd["parameter"],
+                    "timestamp": cmd["timestamp"]
+                }
+                
+                await websocket.send_json(message)
+                
+                # Marcar como enviado
+                cmd["status"] = "sent"
+                cmd["sent_at"] = datetime.now().isoformat()
+                
+                print(f"✅ Comando enviado [{cmd['id'][:8]}]: {cmd['command']}({cmd['parameter']})")
+                
+            except Exception as e:
+                print(f"❌ Error enviando comando [{cmd['id'][:8]}]: {e}")
+    
+    def mark_ack(self, device_id: str, command_id: str):
+        """Marcar comando como confirmado (ACK)"""
+        if device_id not in self.command_queue:
+            return False
+        
+        for cmd in self.command_queue[device_id]:
+            if cmd["id"] == command_id:
+                cmd["status"] = "acked"
+                cmd["acked_at"] = datetime.now().isoformat()
+                
+                self.last_ack[device_id] = {
+                    "command_id": command_id,
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                print(f"✅ ACK recibido [{command_id[:8]}]: {cmd['command']}({cmd['parameter']})")
+                return True
+        
+        return False
+    
+    def get_command_status(self, device_id: str, command_id: str) -> dict:
+        """Obtener estado de un comando"""
+        if device_id not in self.command_queue:
+            return None
+        
+        for cmd in self.command_queue[device_id]:
+            if cmd["id"] == command_id:
+                return cmd
+        
+        return None
+    
+    def cleanup_old_commands(self, device_id: str, max_age_minutes: int = 5):
+        """Limpiar comandos viejos ya confirmados"""
+        if device_id not in self.command_queue:
+            return
+        
+        from datetime import timedelta
+        cutoff = datetime.now() - timedelta(minutes=max_age_minutes)
+        
+        # Mantener solo comandos recientes o no confirmados
+        self.command_queue[device_id] = [
+            cmd for cmd in self.command_queue[device_id]
+            if cmd["status"] != "acked" or datetime.fromisoformat(cmd["acked_at"]) > cutoff
+        ]
+
+esp32_ws_manager = ESP32WebSocketManager()
+
+
+# ===== ENDPOINT BASICO DE PRUEBA =====
+@app.get("/")
+def root():
+    return {"status": "online", "message": "Backend funcionando"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 
 # ===== INCLUIR ROUTERS =====
 app.include_router(esp32_router.router)
@@ -421,7 +564,7 @@ async def get_dashboard_data(db: Session = Depends(get_db)):
 
 @app.websocket("/api/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket para actualizaciones en tiempo real"""
+    """WebSocket para actualizaciones en tiempo real (frontend)"""
     await manager.connect(websocket)
     try:
         while True:
@@ -429,6 +572,54 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.websocket("/api/ws/esp32/{device_id}")
+async def esp32_websocket_endpoint(websocket: WebSocket, device_id: str):
+    """WebSocket dedicado para comunicación ESP32 ↔ Backend
+    
+    El ESP32 se conecta aquí y recibe comandos en tiempo real.
+    También envía ACK cuando ejecuta comandos.
+    """
+    await esp32_ws_manager.connect(device_id, websocket)
+    
+    try:
+        while True:
+            # Recibir mensajes del ESP32 (ACK, heartbeat, etc)
+            data = await websocket.receive_json()
+            
+            # Procesar ACK de comandos ejecutados
+            if data.get("type") == "ack":
+                command_id = data.get("command_id")
+                if command_id:
+                    esp32_ws_manager.mark_ack(device_id, command_id)
+                    
+                    # Broadcast a frontend si está conectado
+                    await manager.broadcast({
+                        "type": "esp32_command_ack",
+                        "device_id": device_id,
+                        "command_id": command_id,
+                        "timestamp": datetime.now().isoformat()
+                    })
+            
+            # Procesar heartbeat
+            elif data.get("type") == "heartbeat":
+                print(f"💓 Heartbeat ESP32: {device_id}")
+            
+            # Limpiar comandos viejos cada 10 mensajes
+            if hasattr(esp32_websocket_endpoint, 'msg_count'):
+                esp32_websocket_endpoint.msg_count += 1
+            else:
+                esp32_websocket_endpoint.msg_count = 1
+            
+            if esp32_websocket_endpoint.msg_count % 10 == 0:
+                esp32_ws_manager.cleanup_old_commands(device_id)
+                
+    except WebSocketDisconnect:
+        esp32_ws_manager.disconnect(device_id)
+    except Exception as e:
+        print(f"❌ Error en WebSocket ESP32 [{device_id}]: {e}")
+        esp32_ws_manager.disconnect(device_id)
 
 
 # ===== ESTADO DEL SISTEMA =====
@@ -659,10 +850,13 @@ async def root():
         return {
             'name': 'Sistema Inversor Inteligente Híbrido',
             'version': '1.0.0',
-            'status': 'online',
-            'docs': '/docs',
-            'note': 'Frontend no encontrado. Ejecuta BUILD_Y_SERVIR.bat'
+            'status': 'online'
         }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 @app.get("/api")
 async def api_root():
@@ -876,24 +1070,17 @@ async def obtener_dashboard_eficiencia(
 # ===== ESP32 / IOT DEVICES =====
 
 @app.post("/api/esp32/telemetry")
-async def recibir_telemetria_esp32(data: dict):
+async def recibir_telemetria_esp32(telemetria: dict):
     """
-    Recibir telemetría desde ESP32
-    
-    STAGE 1 Format:
-    {
-        "device_id": "ESP32_001",
-        "seq": 123,
-        "ts": 1234567890,
-        "v_bat_v": 2.145,
-        "v_wind_v_dc": 1.650,
-        "v_solar_v": 1.234,
+    Recibir telemetría del ESP32
+    Incluye ACK de comandos ejecutados
         "v_load_v": 1.890
     }
     
     Legacy format also supported for compatibility.
     """
     try:
+        data = telemetria  # Fix: rename parameter
         device_id = data.get('device_id', 'UNKNOWN')
         
         # ===== STAGE 1: Packet loss tracking =====
@@ -927,6 +1114,31 @@ async def recibir_telemetria_esp32(data: dict):
             lost_total = recibir_telemetria_esp32.uplink_lost.get(device_id, 0)
             
             print(f"[TELEM] {device_id} seq={seq} ts={ts} Vbat={v_bat:.3f}V Vwind_DC={v_wind:.3f}V Vsolar={v_solar:.3f}V Vload={v_load:.3f}V Lost={lost_total} | OK")
+
+            # Si el firmware envía telemetría extendida con raw_adc (cada ~5s),
+            # mostrar los voltajes por GPIO (0–3.3V) al estilo del ESP32
+            raw_adc = data.get('raw_adc')
+            if isinstance(raw_adc, dict):
+                gpio34 = raw_adc.get('adc1_bat1', None)
+                gpio35 = raw_adc.get('adc2_bat2', None)
+                gpio32 = raw_adc.get('adc3_bat3', None)
+                gpio33 = raw_adc.get('adc4_solar', None)
+                gpio36 = raw_adc.get('adc5_wind', None)
+                gpio39 = raw_adc.get('adc6_load', None)
+                # Imprimir solo si al menos uno está presente
+                if any(v is not None for v in [gpio34, gpio35, gpio32, gpio33, gpio36, gpio39]):
+                    def f(val):
+                        try:
+                            return f"{float(val):.3f}V"
+                        except Exception:
+                            return "--"
+                    print("GPIO34 → Batería1 (0–3.3V):", f(gpio34))
+                    print("GPIO35 → Batería2 (0–3.3V):", f(gpio35))
+                    print("GPIO32 → Batería3 (0–3.3V):", f(gpio32))
+                    print("GPIO33 → Corriente Solar (0–3.3V):", f(gpio33))
+                    # Para eólica también mostramos el DC filtrado reportado en Stage 1
+                    print("GPIO36 → Corriente Eólica RAW (0–3.3V):", f(gpio36), "| Filtrada DC:", f(v_wind))
+                    print("GPIO39 → Corriente Carga (0–3.3V):", f(gpio39))
         
         device_id = data.get('device_id', 'UNKNOWN')
         
@@ -934,15 +1146,30 @@ async def recibir_telemetria_esp32(data: dict):
         if not hasattr(recibir_telemetria_esp32, 'devices'):
             recibir_telemetria_esp32.devices = {}
         
+        # Mantener registered_at si ya existe
+        registered_at = recibir_telemetria_esp32.devices.get(device_id, {}).get('registered_at', datetime.now().isoformat())
+        
         recibir_telemetria_esp32.devices[device_id] = {
             'last_seen': datetime.now().isoformat(),
+            'registered_at': registered_at,
+            'heartbeat': {
+                'device_id': device_id,
+                'uptime': data.get('uptime', 0),
+                'free_heap': data.get('free_heap', 0),
+                'rssi': data.get('rssi', 0),
+                'timestamp': datetime.now().isoformat()
+            },
             'telemetry': {
                 'battery_voltage': data.get('voltaje_promedio', 0),
                 'battery_soc': data.get('soc', 0),
                 'solar_power': data.get('potencia_solar', 0),
                 'wind_power': data.get('potencia_eolica', 0),
                 'load_power': data.get('potencia_consumo', 0),
-                'temperature': data.get('temperatura', 0)
+                'temperature': data.get('temperatura', 0),
+                'v_bat_v': data.get('v_bat_v', 0),
+                'v_wind_v_dc': data.get('v_wind_v_dc', 0),
+                'v_solar_v': data.get('v_solar_v', 0),
+                'v_load_v': data.get('v_load_v', 0)
             },
             'relays': {
                 'solar': data.get('relays', {}).get('solar', False),
@@ -995,25 +1222,54 @@ async def listar_dispositivos_esp32():
     
     devices = []
     now = datetime.now()
+    online_count = 0
     
     for device_id, info in recibir_telemetria_esp32.devices.items():
         last_seen = datetime.fromisoformat(info['last_seen'])
         seconds_ago = (now - last_seen).total_seconds()
-        is_online = seconds_ago < 30  # Offline si no se ve en 30 seg (era 60)
+        is_online = seconds_ago < 10  # Online si se vio en últimos 10 segundos
         
-        devices.append({
+        if is_online:
+            online_count += 1
+        
+        # Construir objeto de dispositivo con todos los datos
+        telemetry_data = info.get('telemetry', {})
+        relays_data = info.get('relays', {})
+        raw_adc_data = info.get('raw_adc', {})
+        
+        # Debug: imprimir raw_adc para verificar
+        if raw_adc_data:
+            print(f"📊 [API] raw_adc para {device_id}:", raw_adc_data)
+        
+        device_data = {
             'device_id': device_id,
-            'is_online': is_online,
+            'status': 'online' if is_online else 'offline',
             'last_seen': info['last_seen'],
-            'seconds_since_last_seen': int(seconds_ago),
-            'telemetry': info.get('telemetry'),
-            'relays': info.get('relays')
-        })
+            'registered_at': info.get('registered_at', info['last_seen']),
+            'heartbeat': info.get('heartbeat', {}),
+            'telemetry': {
+                'battery_voltage': telemetry_data.get('battery_voltage', 0),
+                'battery_soc': telemetry_data.get('battery_soc', 0),
+                'solar_power': telemetry_data.get('solar_power', 0),
+                'wind_power': telemetry_data.get('wind_power', 0),
+                'load_power': telemetry_data.get('load_power', 0),
+                'temperature': telemetry_data.get('temperature', 0),
+                'v_bat_v': telemetry_data.get('v_bat_v', 0),
+                'v_wind_v_dc': telemetry_data.get('v_wind_v_dc', 0),
+                'v_solar_v': telemetry_data.get('v_solar_v', 0),
+                'v_load_v': telemetry_data.get('v_load_v', 0),
+                'relays': relays_data,
+                'raw_adc': raw_adc_data
+            }
+        }
+        
+        devices.append(device_data)
     
     return {
-        'status': 'success',
         'devices': devices,
-        'count': len(devices)
+        'total': len(devices),
+        'online': online_count,
+        'offline': len(devices) - online_count
     }
 
 
@@ -1034,47 +1290,91 @@ async def obtener_estado_esp32(device_id: str):
     }
 
 
+@app.get("/api/esp32/estado/{device_id}")
+async def obtener_estado_dispositivo(device_id: str):
+    """
+    Obtener estado actual del dispositivo ESP32 (GPIO + relés)
+    Frontend lo consulta para actualizar UI
+    """
+    if not hasattr(recibir_telemetria_esp32, 'devices'):
+        return {"status": "error", "message": "Dispositivo no encontrado"}
+    
+    device = recibir_telemetria_esp32.devices.get(device_id)
+    if not device:
+        return {"status": "error", "message": "Dispositivo no encontrado"}
+    
+    return {
+        "status": "success",
+        "device_id": device_id,
+        "last_seen": device.get('last_seen'),
+        "telemetry": device.get('telemetry', {}),
+        "relays": device.get('relays', {}),
+        "raw_adc": device.get('raw_adc', {})
+    }
+
+
 @app.post("/api/esp32/command/{device_id}")
 async def enviar_comando_esp32(device_id: str, command: dict):
     """
-    Enviar comando a un dispositivo ESP32
+    Enviar comando a un dispositivo ESP32 (con ACK tracking)
     
     Comandos disponibles:
-    - {"command": "calibrate_ldr"}
-    - {"command": "reset_wind"}
+    - {"command": "eolica", "parameter": "on/off"}
+    - {"command": "solar", "parameter": "on/off"}
+    - {"command": "red", "parameter": "on/off"}
+    - {"command": "carga", "parameter": "on/off"}
+    - {"command": "freno", "parameter": "on/off"}
     - {"command": "reboot"}
-    - {"command": "clear_logs"}
     """
-    # Guardar comando en cola (en producción sería Redis/DB)
-    if not hasattr(enviar_comando_esp32, 'command_queue'):
-        enviar_comando_esp32.command_queue = {}
+    cmd = command.get('command')
+    param = command.get('parameter') or command.get('params')
     
-    if device_id not in enviar_comando_esp32.command_queue:
-        enviar_comando_esp32.command_queue[device_id] = []
+    # Encolar en el nuevo sistema con ACK
+    command_id = esp32_ws_manager.enqueue_command(device_id, cmd, param)
     
-    enviar_comando_esp32.command_queue[device_id].append({
-        'command': command.get('command'),
-        'params': command.get('params', {}),
-        'timestamp': datetime.now().isoformat()
-    })
-    
-    print(f"📤 Comando encolado para {device_id}: {command}")
+    # Si el ESP32 está conectado por WebSocket, enviar inmediatamente
+    if device_id in esp32_ws_manager.connections:
+        await esp32_ws_manager.send_pending_commands(device_id)
+    else:
+        # Si no está conectado, queda en cola para HTTP polling (fallback)
+        # Mantener compatibilidad con HTTP polling
+        if not hasattr(enviar_comando_esp32, 'command_queue'):
+            enviar_comando_esp32.command_queue = {}
+        
+        if device_id not in enviar_comando_esp32.command_queue:
+            enviar_comando_esp32.command_queue[device_id] = []
+        
+        cmd_entry = {
+            'command': cmd,
+            'timestamp': datetime.now().isoformat()
+        }
+        if param:
+            cmd_entry['parameter'] = param
+        
+        enviar_comando_esp32.command_queue[device_id].append(cmd_entry)
+        print(f"📤 Comando encolado para HTTP polling (ESP32 no conectado): {cmd}({param})")
     
     return {
         'status': 'success',
         'device_id': device_id,
-        'command': command.get('command'),
-        'timestamp': datetime.now().isoformat()
+        'command_id': command_id,
+        'command': cmd,
+        'parameter': param,
+        'timestamp': datetime.now().isoformat(),
+        'delivery_method': 'websocket' if device_id in esp32_ws_manager.connections else 'http_polling'
     }
 
 
 @app.get("/api/esp32/commands/{device_id}")
 async def obtener_comandos_esp32(device_id: str):
     """
-    ESP32 pregunta si hay comandos pendientes (HTTP Polling)
+    ESP32 pregunta si hay comandos pendientes (HTTP Polling - FALLBACK)
     
     STAGE 1: Retorna {"status":"OK"} si no hay comandos,
              {"status":"CMD", "commands":[...]} si hay comandos
+    
+    NOTA: Este endpoint es fallback. Si ESP32 usa WebSocket, los comandos
+    se envían automáticamente por ahí.
     """
     # Obtener comandos de la cola
     if hasattr(enviar_comando_esp32, 'command_queue'):
@@ -1086,7 +1386,11 @@ async def obtener_comandos_esp32(device_id: str):
         
         if commands:
             # Log command sent (Stage 1)
-            cmd_str = ", ".join([c.get("command", "unknown") for c in commands])
+            def fmt(c):
+                cmd = c.get("command", "unknown")
+                par = c.get("parameter")
+                return f"{cmd}({par})" if par is not None else cmd
+            cmd_str = ", ".join([fmt(c) for c in commands])
             print(f"[CMD] {device_id} → Sent: {cmd_str}")
             
             return {
@@ -1102,6 +1406,39 @@ async def obtener_comandos_esp32(device_id: str):
         'device_id': device_id,
         'commands': [],
         'count': 0
+    }
+
+
+@app.get("/api/esp32/command/{device_id}/status/{command_id}")
+async def verificar_estado_comando(device_id: str, command_id: str):
+    """
+    Verificar estado de un comando específico (para ACK tracking)
+    
+    Returns:
+    - status: "pending" | "sent" | "acked" | "not_found"
+    - timestamp: cuando fue encolado
+    - sent_at: cuando fue enviado
+    - acked_at: cuando fue confirmado
+    """
+    cmd_status = esp32_ws_manager.get_command_status(device_id, command_id)
+    
+    if not cmd_status:
+        return {
+            'status': 'not_found',
+            'device_id': device_id,
+            'command_id': command_id,
+            'message': 'Comando no encontrado o ya expiró'
+        }
+    
+    return {
+        'status': cmd_status['status'],
+        'device_id': device_id,
+        'command_id': command_id,
+        'command': cmd_status['command'],
+        'parameter': cmd_status['parameter'],
+        'timestamp': cmd_status['timestamp'],
+        'sent_at': cmd_status['sent_at'],
+        'acked_at': cmd_status['acked_at']
     }
 
 

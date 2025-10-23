@@ -9,13 +9,13 @@
 #define CONFIG_H
 
 // ===== WiFi =====
-#define WIFI_SSID "MUNDO SAN MARTIN"
-#define WIFI_PASSWORD "63489026"
+#define WIFI_SSID "PANDEMONIUM"
+#define WIFI_PASSWORD "PANDEMONIUM"
 #define WIFI_TIMEOUT_MS 20000                 // 20 segundos
 
 // ===== BACKEND (HTTP - SIN MQTT) =====
 // Opción A: IP Pública (✅ CONFIGURADO)
-#define SERVER_URL "http://190.211.201.217:11112"
+#define SERVER_URL "http://190.211.201.217:11113"
 
 // Opción B: Ngrok (para desarrollo/pruebas)
 // #define SERVER_URL "https://argentina.ngrok.pro"
@@ -31,20 +31,21 @@
 #define STAGE1_INTERVAL 1000                  // Stage 1: Send every 1 second
 
 // ===== PINES ADC (GPIO solo input) =====
-#define PIN_VOLTAJE_BAT1    34  // ADC1_CH6 - Voltaje batería 1
-#define PIN_VOLTAJE_BAT2    35  // ADC1_CH7 - Voltaje batería 2  
-#define PIN_VOLTAJE_BAT3    32  // ADC1_CH4 - Voltaje batería 3
-#define PIN_CORRIENTE_SOLAR 33  // ADC1_CH5 - Corriente solar (shunt + OpAmp)
-#define PIN_CORRIENTE_EOLICA 36 // ADC1_CH0 - Corriente eólica (shunt + OpAmp)
+#define PIN_VOLTAJE_BAT1    34  // ADC1_CH6 - Voltaje batería (único canal activo)
+#define PIN_VOLTAJE_BAT2    34  // Reutilizado para evitar GPIO32/33 (no cableado)
+#define PIN_VOLTAJE_BAT3    34  // Reutilizado para evitar GPIO32/33 (no cableado)
+#define PIN_CORRIENTE_SOLAR 36  // ADC1_CH0 - Corriente solar (0–3.3V)
+#define PIN_CORRIENTE_EOLICA 35 // ADC1_CH7 - Eólica (DC filtrado 0–3.3V)
 #define PIN_CORRIENTE_CONSUMO 39 // ADC1_CH3 - Corriente consumo (shunt + OpAmp)
-#define PIN_IRRADIANCIA     25  // ADC2_CH8 - LDR (radiación solar)
-#define PIN_VELOCIDAD_VIENTO 26 // GPIO - Anemómetro (pulsos)
+#define PIN_IRRADIANCIA     27  // GPIO27 - LDR (radiación solar) - MOVIDO de 25
+#define PIN_VELOCIDAD_VIENTO 14 // GPIO14 - Anemómetro (pulsos) - MOVIDO de 26
 
-// ===== PINES RELÉS (GPIO output) =====
-#define PIN_RELE_SOLAR      16  // GPIO16 - Relé panel solar
-#define PIN_RELE_EOLICA     17  // GPIO17 - Relé turbina eólica
-#define PIN_RELE_RED        18  // GPIO18 - Relé red backup
-#define PIN_RELE_CARGA      19  // GPIO19 - Relé carga
+// ===== PINES RELÉS (GPIO output) ===== 
+// ⚠️ HARDWARE REAL: const uint8_t relays[] = {26, 25, 32, 33}
+#define PIN_RELE_SOLAR      26  // GPIO26 - Relé panel solar (HARDWARE REAL)
+#define PIN_RELE_EOLICA     25  // GPIO25 - Relé turbina eólica (HARDWARE REAL)
+#define PIN_RELE_RED        32  // GPIO32 - Relé red backup (HARDWARE REAL)
+#define PIN_RELE_CARGA      33  // GPIO33 - Relé carga (HARDWARE REAL)
 #define PIN_RELE_FRENO      23  // GPIO23 - Relé resistencia frenado (embalamiento)
 
 // ===== CALIBRACIÓN ADC =====

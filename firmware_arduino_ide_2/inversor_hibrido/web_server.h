@@ -7,6 +7,7 @@
 #ifndef WEB_SERVER_H
 #define WEB_SERVER_H
 
+#ifdef ENABLE_WEB_SERVER
 #include <ESPAsyncWebServer.h>
 #include "config.h"
 #include "sensors.h"
@@ -341,5 +342,14 @@ void initWebServer() {
   Serial.println(WiFi.localIP());
   Serial.println("   Dashboard en tiempo real disponible\n");
 }
+
+#else  // ENABLE_WEB_SERVER not defined
+
+// Stub para compilar sin servidor web ni dependencias Async
+inline void initWebServer() {
+  // Web server deshabilitado en esta build
+}
+
+#endif // ENABLE_WEB_SERVER
 
 #endif // WEB_SERVER_H

@@ -9,6 +9,8 @@ import PredictionPanel from './components/PredictionPanel';
 import ESP32Status from './components/ESP32Status';
 import ESP32LiveData from './components/ESP32LiveData';
 import ESP32RawData from './components/ESP32RawData';
+import ESP32Control from './components/ESP32Control';
+import ESP32Monitor from './components/ESP32Monitor';
 import SetupWizard from './components/SetupWizard';
 import ProjectInfo from './components/ProjectInfo';
 import HardwareTest from './components/HardwareTest';
@@ -141,9 +143,9 @@ function App() {
       <Header systemStatus={systemStatus} connected={connected} />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Panel ESP32 */}
+        {/* Monitor ESP32 - Panel Principal con Relés y ADC */}
         <div className="mb-8">
-          <ESP32Status />
+          <ESP32Monitor />
         </div>
 
         {/* Botón de actualizar */}
@@ -236,7 +238,7 @@ function App() {
             {/* Datos RAW ADCs */}
             <ESP32RawData />
 
-            {/* Clima */}
+            {/* Pronóstico meteorológico */}
             <WeatherWidget weather={dashboardData?.weather} />
 
             {/* Mapa de ubicación */}

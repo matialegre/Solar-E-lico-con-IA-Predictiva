@@ -279,21 +279,22 @@ void readAllSensors() {
   // Consumo: directo
   sensores.v_load_v = sensores.adc_consumo * 3.3f / 4095.0f;
   
-  #ifdef DEBUG_SENSORS
-  static unsigned long lastDebug = 0;
-  if (millis() - lastDebug >= 5000) {
-    float rpm = calcularRPM();
-    Serial.println("\n📊 SENSORES:");
-    Serial.printf("   Voltaje: %.2fV | SOC: %.1f%% | Temp: %.1f°C\n", 
-                  sensores.voltaje_promedio, sensores.soc, sensores.temperatura);
-    Serial.printf("   Solar:   %.2fA / %.0fW\n", sensores.corriente_solar, sensores.potencia_solar);
-    Serial.printf("   Eólica:  %.2fA / %.0fW\n", sensores.corriente_eolica, sensores.potencia_eolica);
-    Serial.printf("   Consumo: %.2fA / %.0fW\n", sensores.corriente_consumo, sensores.potencia_consumo);
-    Serial.printf("   Viento:  %.1f m/s (%.0f RPM) | Luz: %.0f W/m²\n\n", 
-                  sensores.velocidad_viento, rpm, sensores.irradiancia);
-    lastDebug = millis();
-  }
-  #endif
+  // Debug de sensores desactivado para no bombardear serial
+  // #ifdef DEBUG_SENSORS
+  // static unsigned long lastDebug = 0;
+  // if (millis() - lastDebug >= 5000) {
+  //   float rpm = calcularRPM();
+  //   Serial.println("\n📊 SENSORES:");
+  //   Serial.printf("   Voltaje: %.2fV | SOC: %.1f%% | Temp: %.1f°C\n", 
+  //                 sensores.voltaje_promedio, sensores.soc, sensores.temperatura);
+  //   Serial.printf("   Solar:   %.2fA / %.0fW\n", sensores.corriente_solar, sensores.potencia_solar);
+  //   Serial.printf("   Eólica:  %.2fA / %.0fW\n", sensores.corriente_eolica, sensores.potencia_eolica);
+  //   Serial.printf("   Consumo: %.2fA / %.0fW\n", sensores.corriente_consumo, sensores.potencia_consumo);
+  //   Serial.printf("   Viento:  %.1f m/s (%.0f RPM) | Luz: %.0f W/m²\n\n", 
+  //                 sensores.velocidad_viento, rpm, sensores.irradiancia);
+  //   lastDebug = millis();
+  // }
+  // #endif
 }
 
 #endif // SENSORS_H

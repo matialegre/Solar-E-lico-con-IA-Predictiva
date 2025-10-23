@@ -1,143 +1,0 @@
-═══════════════════════════════════════════════════════════
-  🚀 INSTRUCCIONES RÁPIDAS DEL SISTEMA
-═══════════════════════════════════════════════════════════
-
-📁 ARCHIVOS PRINCIPALES:
-
-1. REINICIO_TOTAL.bat
-   ✅ Apaga todo
-   ✅ Limpia cache
-   ✅ Reinicia backend (puerto 11112)
-   ✅ Reinicia frontend (puerto 11113)
-   ✅ Abre navegador automáticamente
-   ✅ SIN NGROK - Solo HTTP
-
-2. DETENER_SISTEMA.bat
-   ⛔ Detiene backend
-   ⛔ Detiene frontend
-   ⛔ Libera puertos
-
-3. VERIFICAR_ESP32.bat
-   🔍 Muestra estado del ESP32
-   🔍 Verifica si está online
-
-═══════════════════════════════════════════════════════════
-  ⚡ USO DIARIO:
-═══════════════════════════════════════════════════════════
-
-INICIO DEL DÍA:
-  1. Doble click: REINICIO_TOTAL.bat
-  2. Espera 20 segundos
-  3. Navega a: http://190.211.201.217:11113
-
-FIN DEL DÍA:
-  1. Doble click: DETENER_SISTEMA.bat
-
-SI HAY PROBLEMAS:
-  1. Ejecuta: DETENER_SISTEMA.bat
-  2. Espera 5 segundos
-  3. Ejecuta: REINICIO_TOTAL.bat
-
-═══════════════════════════════════════════════════════════
-  🌐 URLs DE ACCESO:
-═══════════════════════════════════════════════════════════
-
-Frontend (Dashboard):
-  http://190.211.201.217:11113  ← Remoto
-  http://localhost:11113         ← Local
-
-Backend (API):
-  http://190.211.201.217:11112
-  http://localhost:11112/docs    ← Documentación API
-
-ESP32 Web Local:
-  http://[IP_DEL_ESP32]          ← Aparece en Monitor Serie
-
-═══════════════════════════════════════════════════════════
-  🔧 SOLUCIÓN DE PROBLEMAS:
-═══════════════════════════════════════════════════════════
-
-❌ PROBLEMA: ESP32 aparece OFFLINE
-   ✅ SOLUCIÓN: Ejecuta REINICIO_TOTAL.bat
-
-❌ PROBLEMA: Frontend no carga
-   ✅ SOLUCIÓN: Espera 30 segundos después de iniciar
-                Refresca navegador (F5)
-
-❌ PROBLEMA: Backend no responde
-   ✅ SOLUCIÓN: Verifica firewall
-                Ejecuta REINICIO_TOTAL.bat
-
-❌ PROBLEMA: Puerto ocupado
-   ✅ SOLUCIÓN: DETENER_SISTEMA.bat
-                Luego REINICIO_TOTAL.bat
-
-═══════════════════════════════════════════════════════════
-  📊 CONFIGURACIÓN ACTUAL:
-═══════════════════════════════════════════════════════════
-
-Backend:
-  • Puerto: 11112
-  • Host: 0.0.0.0 (todas las interfaces)
-  • Protocolo: HTTP
-  • Auto-reload: Activado
-
-Frontend:
-  • Puerto: 11113
-  • Protocolo: HTTP
-  • Hot-reload: Activado
-
-ESP32:
-  • WiFi: MUNDO SAN MARTIN
-  • Servidor: http://190.211.201.217:11112
-  • Telemetría: Cada 5 segundos
-  • Heartbeat: Cada 10 segundos
-
-═══════════════════════════════════════════════════════════
-  ✨ CARACTERÍSTICAS:
-═══════════════════════════════════════════════════════════
-
-✅ Panel ESP32 en tiempo real
-✅ Wizard de configuración (4 pasos)
-✅ Machine Learning (Random Forest)
-✅ NASA POWER API (datos climáticos reales)
-✅ Protección contra embalamiento
-✅ Control manual de relés
-✅ Monitoreo de 8 ADCs
-✅ Mapa interactivo
-✅ Dimensionamiento automático
-✅ Fallback si ML falla
-
-═══════════════════════════════════════════════════════════
-  🎯 PRIMER USO:
-═══════════════════════════════════════════════════════════
-
-1. Ejecuta: REINICIO_TOTAL.bat
-2. Abre: http://190.211.201.217:11113
-3. Click: ⚙️ Configurar Sistema (Recomendaciones)
-4. Sigue wizard de 4 pasos
-5. Guarda configuración
-6. ¡Listo! Sistema funcionando
-
-═══════════════════════════════════════════════════════════
-  📱 FIRMWARE ESP32:
-═══════════════════════════════════════════════════════════
-
-Ubicación:
-  firmware_arduino_ide_2\inversor_hibrido\
-
-Para subir firmware:
-  1. Abrir Arduino IDE
-  2. Abrir: inversor_hibrido.ino
-  3. Seleccionar placa: ESP32 Dev Module
-  4. Puerto: COMx (donde esté el ESP32)
-  5. Click: Upload
-
-Librerías necesarias:
-  • ESPAsyncWebServer
-  • AsyncTCP
-  • ArduinoJson
-
-═══════════════════════════════════════════════════════════
-  🔥 TODO ESTÁ LISTO - SOLO USA REINICIO_TOTAL.bat
-═══════════════════════════════════════════════════════════

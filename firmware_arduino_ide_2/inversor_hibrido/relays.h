@@ -50,7 +50,7 @@ void initRelays() {
   relay_state.freno_activo = false;
   relay_state.ultima_actualizacion = millis();
   
-  Serial.println("✅ Relés inicializados (todos APAGADOS)");
+  // Serial.println("✅ Relés inicializados (todos APAGADOS)");
 }
 
 // ===== CONTROL INDIVIDUAL =====
@@ -67,7 +67,7 @@ void setRelaySolar(bool estado) {
 void setRelayEolica(bool estado) {
   // SEGURIDAD: Si freno está activo, NO conectar eólica
   if (relay_state.freno_activo && estado) {
-    Serial.println("🚨 ERROR: No se puede conectar eólica con freno activo");
+    // Serial.println("🚨 ERROR: No se puede conectar eólica con freno activo");
     return;
   }
   
@@ -103,7 +103,7 @@ void setRelayCarga(bool estado) {
 void setRelayFreno(bool estado) {
   // SEGURIDAD: Si freno se activa, desconectar eólica primero
   if (estado && relay_state.eolica_conectada) {
-    Serial.println("🚨 Desconectando eólica antes de activar freno");
+    // Serial.println("🚨 Desconectando eólica antes de activar freno");
     setRelayEolica(false);
     delay(100);  // Esperar desconexión
   }
@@ -119,7 +119,7 @@ void setRelayFreno(bool estado) {
 
 // ===== APAGAR TODO (EMERGENCIA) =====
 void apagarTodo() {
-  Serial.println("🚨 EMERGENCIA: Apagando todos los relés");
+  // EMERGENCIA: Apagando todos los relés
   
   setRelaySolar(false);
   setRelayEolica(false);
@@ -127,7 +127,7 @@ void apagarTodo() {
   setRelayCarga(false);
   setRelayFreno(false);
   
-  Serial.println("✅ Todos los relés apagados");
+  // Todos los relés apagados
 }
 
 // ===== ESTRATEGIA AUTOMÁTICA =====
@@ -137,11 +137,10 @@ void aplicarEstrategia(float soc, float potencia_solar, float potencia_eolica, f
   float generacion_total = potencia_solar + potencia_eolica;
   float balance = generacion_total - consumo;
   
-  #ifdef DEBUG_RELAYS
-  Serial.println("\n🤖 ESTRATEGIA AUTOMÁTICA:");
-  Serial.printf("   SOC: %.1f%% | Gen: %.0fW | Cons: %.0fW | Balance: %.0fW\n", 
-                soc, generacion_total, consumo, balance);
-  #endif
+  // Estrategia automática (salida desactivada para no bombardear serial)
+  // Serial.println("\n🤖 ESTRATEGIA AUTOMÁTICA:");
+  // Serial.printf("   SOC: %.1f%% | Gen: %.0fW | Cons: %.0fW | Balance: %.0fW\n", 
+  //               soc, generacion_total, consumo, balance);
   
   // REGLA 1: Uso directo de renovables (prioridad)
   if (generacion_total >= consumo) {
@@ -153,11 +152,11 @@ void aplicarEstrategia(float soc, float potencia_solar, float potencia_eolica, f
     // ¿Sobra energía? Cargar batería si está en zona óptima
     if (balance > 100 && soc >= SOC_MIN_DESCARGA && soc < SOC_MAX_CARGA) {
       #ifdef DEBUG_RELAYS
-      Serial.println("   💡 Excedente → Cargando batería");
+      // Serial.println("   💡 Excedente → Cargando batería");
       #endif
     } else if (soc >= SOC_MAX_CARGA) {
       #ifdef DEBUG_RELAYS
-      Serial.println("   🔋 Batería llena (>80%) - No cargar más");
+      // Serial.println("   🔋 Batería llena (>80%) - No cargar más");
       #endif
     }
   }
@@ -178,12 +177,12 @@ void aplicarEstrategia(float soc, float potencia_solar, float potencia_eolica, f
     setRelayCarga(true);
     
     #ifdef DEBUG_RELAYS
-    Serial.println("   ⚠️ Batería baja (<25%) - Activando red backup");
+    // Serial.println("   ⚠️ Batería baja (<25%) - Activando red backup");
     #endif
   }
   // REGLA 4: Crítico - Alertar
   else if (soc <= SOC_CRITICO) {
-    Serial.println("🚨 CRÍTICO: Batería <10% - Reducir consumo");
+    // Serial.println("🚨 CRÍTICO: Batería <10% - Reducir consumo");
   }
   
   #ifdef DEBUG_RELAYS

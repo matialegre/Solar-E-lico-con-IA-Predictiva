@@ -21,6 +21,7 @@
 #include "relays.h"
 #include "protection.h"
 #include "http_client.h"
+#include "websocket_client.h"  // Nuevo: WebSocket bidireccional
 #include "web_server.h"
 
 // ===== VARIABLES GLOBALES =====
@@ -75,6 +76,11 @@ void setup() {
   initHTTP();
   Serial.println("✅ Cliente HTTP listo");
   
+  // Inicializar WebSocket (sistema principal de comunicación)
+  Serial.println("🔌 Inicializando WebSocket...");
+  initWebSocket();
+  Serial.println("✅ WebSocket iniciado (conectando en background...)");
+  
   // Iniciar servidor web local
   Serial.println("🌐 Iniciando servidor web local...");
   initWebServer();
@@ -115,6 +121,8 @@ void setup() {
   Serial.println("   ⏱️  1Hz telemetry + commands");
   Serial.println("   📊 Raw voltages (0-3.3V)");
   Serial.println("   🎚️  Wind DC extraction (10Hz LP, Q=0.707)");
+  Serial.println("   🔌 WebSocket bidireccional (sin GET -7)");
+  Serial.println("   ✅ Sistema ACK para comandos");
   Serial.println();
   
   systemReady = true;
@@ -128,18 +136,23 @@ void loop() {
     connectWiFi();
   }
   
+  // Mantener WebSocket vivo (PRIORIDAD MÁXIMA)
+  loopWebSocket();
+  
   // Leer sensores constantemente
   readAllSensors();
   
   // ===== STAGE 1: Enviar telemetría + comandos cada 1 segundo =====
   if (millis() - lastStage1Time >= STAGE1_INTERVAL) {
-    // 1. Enviar telemetría (POST)
+    // 1. Enviar telemetría (POST - siempre enviamos por HTTP para logs)
     sendStage1Telemetry();
     
-    // 2. Verificar comandos (GET)
-    checkStage1Commands();
+    // 2. Verificar comandos SOLO si WebSocket NO está conectado (fallback)
+    if (!isWebSocketConnected()) {
+      checkStage1Commands();  // HTTP polling fallback
+    }
     
-    // 3. Print UART (2 líneas)
+    // 3. Print UART (1 línea compacta)
     printStage1UART();
     
     lastStage1Time = millis();
@@ -175,7 +188,12 @@ void loop() {
   // Heartbeat cada 30 segundos
   static unsigned long lastHeartbeat = 0;
   if (millis() - lastHeartbeat >= 30000) {
-    sendHeartbeat();
+    // Enviar por WebSocket si está conectado, sino por HTTP
+    if (isWebSocketConnected()) {
+      sendWebSocketHeartbeat();
+    } else {
+      sendHeartbeat();  // HTTP fallback
+    }
     lastHeartbeat = millis();
   }
   
