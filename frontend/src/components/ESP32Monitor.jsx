@@ -10,31 +10,25 @@ const ESP32Monitor = () => {
   // Cargar datos del ESP32
   const loadESP32Data = async () => {
     try {
-      const response = await fetch('http://190.211.201.217:11113/api/esp32/devices');
+      const response = await fetch('/api/esp32/devices');
       const data = await response.json();
-      
-      console.log('📡 Datos recibidos del backend:', data);
       
       if (data.devices && data.devices.length > 0) {
         const esp = data.devices[0];
-        console.log('✅ ESP32 Data:', esp);
-        console.log('📊 Telemetry:', esp.telemetry);
-        console.log('🔧 Raw ADC:', esp.telemetry?.raw_adc);
-        
         setEsp32Data(esp);
         setConnected(esp.status === 'online');
         setLastUpdate(new Date());
       }
     } catch (error) {
-      console.error('❌ Error cargando datos ESP32:', error);
+      console.error('Error cargando datos ESP32:', error);
       setConnected(false);
     }
   };
 
-  // Cargar datos iniciales y actualizar cada 2 segundos
+  // Cargar datos iniciales y actualizar cada 0.5 segundos (tiempo real)
   useEffect(() => {
     loadESP32Data();
-    const interval = setInterval(loadESP32Data, 2000);
+    const interval = setInterval(loadESP32Data, 500);  // 500ms = 0.5s
     return () => clearInterval(interval);
   }, []);
 
@@ -88,28 +82,30 @@ const ESP32Monitor = () => {
 
   // Obtener estado del relé
   const getRelayState = (relayName) => {
-    if (!esp32Data || !esp32Data.telemetry) return false;
-    return esp32Data.telemetry.relays?.[relayName] || false;
+    if (!esp32Data) return false;
+    // relays está en el nivel superior, NO dentro de telemetry
+    return esp32Data.relays?.[relayName] || false;
   };
 
   // Obtener valor ADC
   const getADCValue = (adcName) => {
-    if (!esp32Data || !esp32Data.telemetry) {
-      console.log('⚠️ No hay datos de telemetría');
+    if (!esp32Data) {
       return '0.000';
     }
     
-    const rawAdc = esp32Data.telemetry.raw_adc;
-    console.log(`🔍 Buscando ${adcName} en:`, rawAdc);
+    // raw_adc está en el nivel superior, NO dentro de telemetry
+    const rawAdc = esp32Data.raw_adc;
     
-    const value = rawAdc?.[adcName];
+    if (!rawAdc) {
+      return '0.000';
+    }
+    
+    const value = rawAdc[adcName];
     
     if (value === undefined || value === null) {
-      console.log(`⚠️ ${adcName} no encontrado o es null/undefined`);
       return '0.000';
     }
     
-    console.log(`✅ ${adcName} = ${value}`);
     return Number(value).toFixed(3);
   };
 
@@ -145,22 +141,34 @@ const ESP32Monitor = () => {
 
       <div className="p-6 space-y-6">
         {/* Información del dispositivo */}
-        {esp32Data && (
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div className="bg-slate-800 rounded-lg p-3">
-              <p className="text-slate-400">Device ID</p>
-              <p className="text-white font-mono">{esp32Data.device_id}</p>
-            </div>
-            <div className="bg-slate-800 rounded-lg p-3">
-              <p className="text-slate-400">Última actualización</p>
-              <p className="text-white font-mono">{lastUpdate?.toLocaleTimeString() || '--'}</p>
-            </div>
-            <div className="bg-slate-800 rounded-lg p-3">
-              <p className="text-slate-400">RSSI</p>
-              <p className="text-white font-mono">{esp32Data.heartbeat?.rssi || '--'} dBm</p>
-            </div>
+        {/* Info del dispositivo */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          <div className="bg-slate-800 rounded-lg p-3">
+            <p className="text-slate-400 text-xs mb-1">Device ID</p>
+            <p className="text-white text-sm font-mono">{esp32Data?.device_id || '-'}</p>
           </div>
-        )}
+          
+          <div className="bg-slate-800 rounded-lg p-3">
+            <p className="text-slate-400 text-xs mb-1">Contador</p>
+            <p className="text-green-400 text-2xl font-bold font-mono">
+              {esp32Data?.contador || 0}
+            </p>
+          </div>
+          
+          <div className="bg-slate-800 rounded-lg p-3">
+            <p className="text-slate-400 text-xs mb-1">Última actualización</p>
+            <p className="text-white text-sm">
+              {lastUpdate ? lastUpdate.toLocaleTimeString() : '-'}
+            </p>
+          </div>
+          
+          <div className="bg-slate-800 rounded-lg p-3">
+            <p className="text-slate-400 text-xs mb-1">RSSI</p>
+            <p className="text-white text-sm font-mono">
+              {esp32Data?.heartbeat?.rssi || '-'} dBm
+            </p>
+          </div>
+        </div>
 
         {/* Control de Relés */}
         <div>
@@ -307,37 +315,72 @@ const ESP32Monitor = () => {
             Mediciones ADC (0-3.3V)
           </h3>
           
+          {/* Indicador de RPM/Frecuencia - Turbina (SIEMPRE VISIBLE) */}
+          <div className="mb-6 bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-lg p-4 border border-purple-700">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <p className="text-slate-400 text-sm">RPM Turbina Eólica</p>
+                  {esp32Data?.telemetry?.turbine_rpm > 0 && (
+                    <span className="px-2 py-0.5 bg-green-500/20 text-green-400 text-xs rounded-full border border-green-500/50">
+                      ✓ ACTIVO
+                    </span>
+                  )}
+                  {(!esp32Data?.telemetry?.turbine_rpm || esp32Data?.telemetry?.turbine_rpm === 0) && (
+                    <span className="px-2 py-0.5 bg-gray-500/20 text-gray-400 text-xs rounded-full border border-gray-500/50">
+                      ○ SIN SEÑAL
+                    </span>
+                  )}
+                </div>
+                <p className="text-3xl font-bold text-purple-400 font-mono">
+                  {Math.round(esp32Data?.telemetry?.turbine_rpm || esp32Data?.telemetry?.rpm || 0)} <span className="text-lg">RPM</span>
+                </p>
+              </div>
+              <div className="text-right">
+                <p className="text-slate-400 text-sm">Frecuencia Eléctrica</p>
+                <p className="text-2xl font-bold text-pink-400 font-mono">
+                  {(esp32Data?.telemetry?.frequency_hz || 0).toFixed(2)} <span className="text-sm">Hz</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid de 2x2 (4 ADC reales del hardware) */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* D34 - Batería 1 */}
-            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-              <p className="text-slate-400 text-sm mb-1">D34 - Batería 1</p>
+            {/* GPIO34 - Batería */}
+            <div className="bg-slate-800 rounded-lg p-4 border-l-4 border-blue-500">
+              <p className="text-slate-400 text-xs mb-1">GPIO34 (ADC1)</p>
+              <p className="text-lg font-semibold text-white mb-1">🔋 Batería</p>
               <p className="text-3xl font-bold text-blue-400 font-mono">
                 {getADCValue('adc1_bat1')}
                 <span className="text-sm ml-1">V</span>
               </p>
             </div>
 
-            {/* D36 - Corriente Solar */}
-            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-              <p className="text-slate-400 text-sm mb-1">D36 - Solar</p>
-              <p className="text-3xl font-bold text-yellow-400 font-mono">
-                {getADCValue('adc5_wind')}
-                <span className="text-sm ml-1">V</span>
-              </p>
-            </div>
-
-            {/* D35 - Corriente Eólica */}
-            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-              <p className="text-slate-400 text-sm mb-1">D35 - Eólica</p>
+            {/* GPIO35 - Eólica DC */}
+            <div className="bg-slate-800 rounded-lg p-4 border-l-4 border-cyan-500">
+              <p className="text-slate-400 text-xs mb-1">GPIO35 (ADC2)</p>
+              <p className="text-lg font-semibold text-white mb-1">💨 Eólica</p>
               <p className="text-3xl font-bold text-cyan-400 font-mono">
-                {getADCValue('adc2_bat2')}
+                {getADCValue('adc2_eolica')}
                 <span className="text-sm ml-1">V</span>
               </p>
             </div>
 
-            {/* D39 - Corriente Carga */}
-            <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-              <p className="text-slate-400 text-sm mb-1">D39 - Carga</p>
+            {/* GPIO36 - Solar */}
+            <div className="bg-slate-800 rounded-lg p-4 border-l-4 border-yellow-500">
+              <p className="text-slate-400 text-xs mb-1">GPIO36 (ADC5)</p>
+              <p className="text-lg font-semibold text-white mb-1">☀️ Solar</p>
+              <p className="text-3xl font-bold text-yellow-400 font-mono">
+                {getADCValue('adc5_solar')}
+                <span className="text-sm ml-1">V</span>
+              </p>
+            </div>
+
+            {/* GPIO39 - Carga */}
+            <div className="bg-slate-800 rounded-lg p-4 border-l-4 border-green-500">
+              <p className="text-slate-400 text-xs mb-1">GPIO39 (ADC6)</p>
+              <p className="text-lg font-semibold text-white mb-1">⚡ Carga</p>
               <p className="text-3xl font-bold text-green-400 font-mono">
                 {getADCValue('adc6_load')}
                 <span className="text-sm ml-1">V</span>

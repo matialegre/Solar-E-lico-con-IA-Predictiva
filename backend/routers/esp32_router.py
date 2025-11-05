@@ -119,36 +119,72 @@ async def list_devices():
     Listar todos los dispositivos registrados
     
     Usado por el frontend para mostrar dispositivos conectados
+    Lee del DEVICES_STORE unificado (main.py)
     """
-    # Importar telemetría de main.py si existe
-    from main import recibir_telemetria_esp32
+    # Importar el store global desde main.py
+    from main import DEVICES_STORE, load_store_from_disk
     
-    # Marcar como offline los que no han enviado heartbeat en >5 seg
-    # ESP32 configurado para enviar cada 1 segundo
+    # Cargar desde disco por si es un proceso nuevo
+    load_store_from_disk()
+    
+    print(f"🔵 [ROUTER /devices] Dispositivos en DEVICES_STORE: {len(DEVICES_STORE)}")
+    if DEVICES_STORE:
+        print(f"🔵 [ROUTER /devices] Device IDs: {list(DEVICES_STORE.keys())}")
+    
+    devices = []
     now = datetime.now()
-    for device_id, device in dispositivos_db.items():
-        last_seen = datetime.fromisoformat(device["last_seen"])
-        diff = (now - last_seen).total_seconds()
+    online_count = 0
+    
+    for device_id, info in DEVICES_STORE.items():
+        last_seen = datetime.fromisoformat(info['last_seen'])
+        seconds_ago = (now - last_seen).total_seconds()
+        is_online = seconds_ago < 10  # Online si se vio en últimos 10 segundos
         
-        if diff > 5:  # 5 segundos de tolerancia (ESP32 envía cada 1 seg)
-            device["status"] = "offline"
-        else:
-            device["status"] = "online"  # Marcar explícitamente como online
+        if is_online:
+            online_count += 1
         
-        # Agregar info de heartbeat si existe
-        if device_id in heartbeat_db:
-            device["heartbeat"] = heartbeat_db[device_id]
+        # Construir objeto de dispositivo con todos los datos
+        telemetry_data = info.get('telemetry', {})
+        relays_data = info.get('relays', {})
+        raw_adc_data = info.get('raw_adc', {})
         
-        # Agregar telemetría si existe
-        if hasattr(recibir_telemetria_esp32, 'devices') and device_id in recibir_telemetria_esp32.devices:
-            device["telemetry"] = recibir_telemetria_esp32.devices[device_id].get("telemetry")
-            device["relays"] = recibir_telemetria_esp32.devices[device_id].get("relays")
+        # Debug: imprimir raw_adc para verificar
+        if raw_adc_data:
+            print(f"📊 [ROUTER] raw_adc para {device_id}:", raw_adc_data)
+        
+        device_data = {
+            'device_id': device_id,
+            'status': 'online' if is_online else 'offline',
+            'last_seen': info['last_seen'],
+            'registered_at': info.get('registered_at', info['last_seen']),
+            'contador': info.get('contador', 0),  # ← CONTADOR PARA DEBUG
+            'heartbeat': info.get('heartbeat', {}),
+            'relays': relays_data,      # ← Nivel superior, no dentro de telemetry
+            'raw_adc': raw_adc_data,    # ← Nivel superior, no dentro de telemetry
+            'telemetry': {
+                'battery_voltage': telemetry_data.get('battery_voltage', 0),
+                'battery_soc': telemetry_data.get('battery_soc', 0),
+                'solar_power': telemetry_data.get('solar_power', 0),
+                'wind_power': telemetry_data.get('wind_power', 0),
+                'load_power': telemetry_data.get('load_power', 0),
+                'temperature': telemetry_data.get('temperature', 0),
+                'v_bat_v': telemetry_data.get('v_bat_v', 0),
+                'v_wind_v_dc': telemetry_data.get('v_wind_v_dc', 0),
+                'v_solar_v': telemetry_data.get('v_solar_v', 0),
+                'v_load_v': telemetry_data.get('v_load_v', 0),
+                'rpm': telemetry_data.get('rpm', 0),
+                'frequency_hz': telemetry_data.get('frequency_hz', 0),
+                'turbine_rpm': telemetry_data.get('turbine_rpm', 0.0)
+            }
+        }
+        
+        devices.append(device_data)
     
     return {
-        "devices": list(dispositivos_db.values()),
-        "total": len(dispositivos_db),
-        "online": sum(1 for d in dispositivos_db.values() if d["status"] == "online"),
-        "offline": sum(1 for d in dispositivos_db.values() if d["status"] == "offline")
+        "devices": devices,
+        "total": len(devices),
+        "online": online_count,
+        "offline": len(devices) - online_count
     }
 
 

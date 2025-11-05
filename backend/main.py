@@ -231,9 +231,21 @@ app.include_router(status_router.router)
 async def startup_event():
     """Inicializar aplicación"""
     init_db()
+    # Cargar store desde disco al iniciar
+    load_store_from_disk()
+    print("")
+    print("=" * 60)
+    print("🚀 VERSIÓN NUEVA - BACKEND REINICIADO")
+    print("=" * 60)
     print("✅ Sistema Inversor Inteligente iniciado")
-    print(f"📍 Ubicación: {settings.latitude}, {settings.longitude}")
-    print(f"🔋 Capacidad batería: {settings.battery_capacity_wh} Wh")
+    try:
+        print(f"📍 Ubicación: {inverter_controller.ubicacion['latitud']}, {inverter_controller.ubicacion['longitud']}")
+        print(f"🔋 Capacidad batería: {inverter_controller.configuracion.get('capacidad_bateria_wh', 0)} Wh")
+    except:
+        print("📍 Ubicación: No configurada")
+        print("🔋 Capacidad batería: No configurada")
+    print("=" * 60)
+    print("")
     
     # Iniciar tarea de actualización periódica
     asyncio.create_task(periodic_update())
@@ -1069,6 +1081,40 @@ async def obtener_dashboard_eficiencia(
 
 # ===== ESP32 / IOT DEVICES =====
 
+# ===== ESTADO GLOBAL (compartido entre POST y GET) =====
+# Evita inconsistencias con atributos en funciones cuando el reloader crea procesos/hilos.
+DEVICES_STORE = {}
+LAST_SEQ = {}
+UPLINK_LOST = {}
+
+# Persistencia simple en disco para evitar pérdida de estado entre procesos/reloads
+from pathlib import Path
+import json as _json
+STORE_PATH = Path(__file__).parent / "devices_store.json"
+
+def load_store_from_disk():
+    global DEVICES_STORE
+    try:
+        if STORE_PATH.exists():
+            with STORE_PATH.open('r', encoding='utf-8') as f:
+                data = _json.load(f)
+                if isinstance(data, dict):
+                    DEVICES_STORE = data
+                    print(f"🗂️  [STORE] Cargado desde disco: {len(DEVICES_STORE)} dispositivos")
+    except Exception as e:
+        print(f"⚠️  [STORE] Error cargando store: {e}")
+
+def save_store_to_disk():
+    try:
+        with STORE_PATH.open('w', encoding='utf-8') as f:
+            _json.dump(DEVICES_STORE, f, ensure_ascii=False)
+        # print("🗂️  [STORE] Guardado en disco")
+    except Exception as e:
+        print(f"⚠️  [STORE] Error guardando store: {e}")
+
+# ===== CONTADOR GLOBAL PARA DEBUG =====
+contador_paquetes_esp32 = 0
+
 @app.post("/api/esp32/telemetry")
 async def recibir_telemetria_esp32(telemetria: dict):
     """
@@ -1080,30 +1126,28 @@ async def recibir_telemetria_esp32(telemetria: dict):
     Legacy format also supported for compatibility.
     """
     try:
+        print(f"🔵 [DEBUG] Recibiendo telemetría...")
         data = telemetria  # Fix: rename parameter
         device_id = data.get('device_id', 'UNKNOWN')
+        print(f"🔵 [DEBUG] Device ID: {device_id}, tiene seq: {'seq' in data}, tiene raw_adc: {'raw_adc' in data}")
         
         # ===== STAGE 1: Packet loss tracking =====
         if 'seq' in data:
             seq = data.get('seq', 0)
             
-            # Track packet loss
-            if not hasattr(recibir_telemetria_esp32, 'last_seq'):
-                recibir_telemetria_esp32.last_seq = {}
-                recibir_telemetria_esp32.uplink_lost = {}
-            
-            if device_id in recibir_telemetria_esp32.last_seq:
-                expected_seq = recibir_telemetria_esp32.last_seq[device_id] + 1
+            # Track packet loss usando estado global
+            if device_id in LAST_SEQ:
+                expected_seq = LAST_SEQ[device_id] + 1
                 if seq > expected_seq:
                     lost = seq - expected_seq
-                    recibir_telemetria_esp32.uplink_lost[device_id] = recibir_telemetria_esp32.uplink_lost.get(device_id, 0) + lost
+                    UPLINK_LOST[device_id] = UPLINK_LOST.get(device_id, 0) + lost
                 elif seq < expected_seq:
                     # Duplicate/out of order - don't count as lost
                     pass
             else:
-                recibir_telemetria_esp32.uplink_lost[device_id] = 0
+                UPLINK_LOST[device_id] = 0
             
-            recibir_telemetria_esp32.last_seq[device_id] = seq
+            LAST_SEQ[device_id] = seq
             
             # Console log Stage 1 format
             v_bat = data.get('v_bat_v', 0.0)
@@ -1111,47 +1155,75 @@ async def recibir_telemetria_esp32(telemetria: dict):
             v_solar = data.get('v_solar_v', 0.0)
             v_load = data.get('v_load_v', 0.0)
             ts = data.get('ts', 0)
-            lost_total = recibir_telemetria_esp32.uplink_lost.get(device_id, 0)
+            turbine_rpm = data.get('turbine_rpm', 0.0)
+            lost_total = UPLINK_LOST.get(device_id, 0)
             
-            print(f"[TELEM] {device_id} seq={seq} ts={ts} Vbat={v_bat:.3f}V Vwind_DC={v_wind:.3f}V Vsolar={v_solar:.3f}V Vload={v_load:.3f}V Lost={lost_total} | OK")
+            print(f"[TELEM] {device_id} seq={seq} ts={ts} Vbat={v_bat:.3f}V Vwind_DC={v_wind:.3f}V Vsolar={v_solar:.3f}V Vload={v_load:.3f}V RPM={turbine_rpm:.1f} Lost={lost_total} | OK")
 
             # Si el firmware envía telemetría extendida con raw_adc (cada ~5s),
-            # mostrar los voltajes por GPIO (0–3.3V) al estilo del ESP32
+            # mostrar los voltajes por GPIO (0–3.3V) - SOLO 4 ADC REALES
             raw_adc = data.get('raw_adc')
             if isinstance(raw_adc, dict):
-                gpio34 = raw_adc.get('adc1_bat1', None)
-                gpio35 = raw_adc.get('adc2_bat2', None)
-                gpio32 = raw_adc.get('adc3_bat3', None)
-                gpio33 = raw_adc.get('adc4_solar', None)
-                gpio36 = raw_adc.get('adc5_wind', None)
-                gpio39 = raw_adc.get('adc6_load', None)
+                # Mapeo correcto según firmware (CORREGIDO):
+                # GPIO34: Batería (adc1_bat1)
+                # GPIO35: Eólica DC (adc2_eolica) ← NOMBRE CORRECTO
+                # GPIO36: Solar (adc5_solar) ← NOMBRE CORRECTO
+                # GPIO39: Carga (adc6_load)
+                gpio34_bat = raw_adc.get('adc1_bat1', None)
+                gpio35_eolica = raw_adc.get('adc2_eolica', None)
+                gpio36_solar = raw_adc.get('adc5_solar', None)
+                gpio39_carga = raw_adc.get('adc6_load', None)
+                
                 # Imprimir solo si al menos uno está presente
-                if any(v is not None for v in [gpio34, gpio35, gpio32, gpio33, gpio36, gpio39]):
+                if any(v is not None for v in [gpio34_bat, gpio35_eolica, gpio36_solar, gpio39_carga]):
                     def f(val):
                         try:
                             return f"{float(val):.3f}V"
                         except Exception:
                             return "--"
-                    print("GPIO34 → Batería1 (0–3.3V):", f(gpio34))
-                    print("GPIO35 → Batería2 (0–3.3V):", f(gpio35))
-                    print("GPIO32 → Batería3 (0–3.3V):", f(gpio32))
-                    print("GPIO33 → Corriente Solar (0–3.3V):", f(gpio33))
-                    # Para eólica también mostramos el DC filtrado reportado en Stage 1
-                    print("GPIO36 → Corriente Eólica RAW (0–3.3V):", f(gpio36), "| Filtrada DC:", f(v_wind))
-                    print("GPIO39 → Corriente Carga (0–3.3V):", f(gpio39))
+                    print("📊 ADC RAW (0-3.3V):")
+                    print("  GPIO34 → Batería:", f(gpio34_bat))
+                    print("  GPIO35 → Eólica DC:", f(gpio35_eolica))
+                    print("  GPIO36 → Solar:", f(gpio36_solar))
+                    print("  GPIO39 → Carga:", f(gpio39_carga))
         
         device_id = data.get('device_id', 'UNKNOWN')
         
-        # Registrar dispositivo
-        if not hasattr(recibir_telemetria_esp32, 'devices'):
-            recibir_telemetria_esp32.devices = {}
+        # Incrementar contador global
+        global contador_paquetes_esp32
+        contador_paquetes_esp32 += 1
+        contador = contador_paquetes_esp32
+        
+        # Registrar dispositivo en almacén global
+        # (no dependemos de atributos en la función para evitar estados separados)
         
         # Mantener registered_at si ya existe
-        registered_at = recibir_telemetria_esp32.devices.get(device_id, {}).get('registered_at', datetime.now().isoformat())
+        registered_at = DEVICES_STORE.get(device_id, {}).get('registered_at', datetime.now().isoformat())
         
-        recibir_telemetria_esp32.devices[device_id] = {
+        # Extraer raw_adc del ESP32
+        raw_adc_from_esp = data.get('raw_adc', {})
+        
+        # Si no viene raw_adc en este paquete, mantener el anterior
+        old_device_data = DEVICES_STORE.get(device_id, {})
+        old_raw_adc = old_device_data.get('raw_adc', {})
+        old_relays = old_device_data.get('relays', {})
+        
+        # Usar el nuevo si existe, sino mantener el viejo
+        final_raw_adc = raw_adc_from_esp if raw_adc_from_esp else old_raw_adc
+        
+        # Relays: siempre usar los nuevos si vienen
+        relays_from_esp = data.get('relays', {})
+        final_relays = {
+            'solar': relays_from_esp.get('solar', old_relays.get('solar', False)),
+            'wind': relays_from_esp.get('eolica', old_relays.get('wind', False)),
+            'grid': relays_from_esp.get('red', old_relays.get('grid', False)),
+            'load': relays_from_esp.get('carga', old_relays.get('load', False))
+        }
+        
+        DEVICES_STORE[device_id] = {
             'last_seen': datetime.now().isoformat(),
             'registered_at': registered_at,
+            'contador': contador,  # ← CONTADOR PARA DEBUG
             'heartbeat': {
                 'device_id': device_id,
                 'uptime': data.get('uptime', 0),
@@ -1169,39 +1241,45 @@ async def recibir_telemetria_esp32(telemetria: dict):
                 'v_bat_v': data.get('v_bat_v', 0),
                 'v_wind_v_dc': data.get('v_wind_v_dc', 0),
                 'v_solar_v': data.get('v_solar_v', 0),
-                'v_load_v': data.get('v_load_v', 0)
+                'v_load_v': data.get('v_load_v', 0),
+                'rpm': data.get('rpm', 0),
+                'frequency_hz': data.get('frequency_hz', 0),
+                'turbine_rpm': float(data.get('turbine_rpm', 0.0)) if data.get('turbine_rpm', 0.0) >= 0 else 0.0
             },
-            'relays': {
-                'solar': data.get('relays', {}).get('solar', False),
-                'wind': data.get('relays', {}).get('eolica', False),
-                'grid': data.get('relays', {}).get('red', False),
-                'load': data.get('relays', {}).get('carga', False)
-            },
+            'relays': final_relays,
             'raw_adc': {
-                'adc1_bat1': data.get('raw_adc', {}).get('adc1_bat1', 0),
-                'adc1_bat1_raw': data.get('raw_adc', {}).get('adc1_bat1_raw', 0),
-                'adc2_bat2': data.get('raw_adc', {}).get('adc2_bat2', 0),
-                'adc2_bat2_raw': data.get('raw_adc', {}).get('adc2_bat2_raw', 0),
-                'adc3_bat3': data.get('raw_adc', {}).get('adc3_bat3', 0),
-                'adc3_bat3_raw': data.get('raw_adc', {}).get('adc3_bat3_raw', 0),
-                'adc4_solar': data.get('raw_adc', {}).get('adc4_solar', 0),
-                'adc4_solar_raw': data.get('raw_adc', {}).get('adc4_solar_raw', 0),
-                'adc5_wind': data.get('raw_adc', {}).get('adc5_wind', 0),
-                'adc5_wind_raw': data.get('raw_adc', {}).get('adc5_wind_raw', 0),
-                'adc6_load': data.get('raw_adc', {}).get('adc6_load', 0),
-                'adc6_load_raw': data.get('raw_adc', {}).get('adc6_load_raw', 0),
-                'adc7_ldr': data.get('raw_adc', {}).get('adc7_ldr', 0),
-                'adc7_ldr_raw': data.get('raw_adc', {}).get('adc7_ldr_raw', 0)
+                # 4 ADC reales del hardware (NOMBRES CORREGIDOS):
+                # GPIO34: Batería (adc1_bat1)
+                # GPIO35: Eólica DC (adc2_eolica) ← CORREGIDO
+                # GPIO36: Solar (adc5_solar) ← CORREGIDO
+                # GPIO39: Carga (adc6_load)
+                'adc1_bat1': final_raw_adc.get('adc1_bat1', 0),        # GPIO34 - Batería
+                'adc1_bat1_raw': final_raw_adc.get('adc1_bat1_raw', 0),
+                'adc2_eolica': final_raw_adc.get('adc2_eolica', 0),    # GPIO35 - Eólica DC
+                'adc2_eolica_raw': final_raw_adc.get('adc2_eolica_raw', 0),
+                'adc5_solar': final_raw_adc.get('adc5_solar', 0),      # GPIO36 - Solar
+                'adc5_solar_raw': final_raw_adc.get('adc5_solar_raw', 0),
+                'adc6_load': final_raw_adc.get('adc6_load', 0),        # GPIO39 - Carga
+                'adc6_load_raw': final_raw_adc.get('adc6_load_raw', 0)
             }
         }
         
-        print(f"✅ {device_id} actualizado - Voltaje: {data.get('voltaje_promedio', 0)}V")
+        # Debug: imprimir lo que se guardó
+        if raw_adc_from_esp:
+            print(f"💾 [GUARDAR NUEVO #{contador}] raw_adc para {device_id}:", DEVICES_STORE[device_id]['raw_adc'])
+        else:
+            print(f"♻️ [MANTENER #{contador}] raw_adc para {device_id} (paquete sin ADC)")
+        
+        print(f"✅ [{contador}] {device_id} actualizado - Voltaje: {data.get('voltaje_promedio', 0)}V")
+        # Guardar en disco para compartir estado entre procesos
+        save_store_to_disk()
         
         return {
             'status': 'success',
             'message': 'Telemetría recibida',
             'device_id': device_id,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'turbine_rpm': float(data.get('turbine_rpm', 0.0)) if data.get('turbine_rpm', 0.0) >= 0 else 0.0
         }
         
     except Exception as e:
@@ -1212,65 +1290,45 @@ async def recibir_telemetria_esp32(telemetria: dict):
         }
 
 
-@app.get("/api/esp32/devices")
-async def listar_dispositivos_esp32():
+@app.get("/api/esp32/diagnostico")
+async def diagnostico_esp32():
     """
-    Listar todos los dispositivos ESP32 conectados/conocidos
+    Diagnóstico del sistema ESP32
     """
-    if not hasattr(recibir_telemetria_esp32, 'devices'):
-        recibir_telemetria_esp32.devices = {}
+    global contador_paquetes_esp32
     
-    devices = []
-    now = datetime.now()
-    online_count = 0
-    
-    for device_id, info in recibir_telemetria_esp32.devices.items():
-        last_seen = datetime.fromisoformat(info['last_seen'])
-        seconds_ago = (now - last_seen).total_seconds()
-        is_online = seconds_ago < 10  # Online si se vio en últimos 10 segundos
-        
-        if is_online:
-            online_count += 1
-        
-        # Construir objeto de dispositivo con todos los datos
-        telemetry_data = info.get('telemetry', {})
-        relays_data = info.get('relays', {})
-        raw_adc_data = info.get('raw_adc', {})
-        
-        # Debug: imprimir raw_adc para verificar
-        if raw_adc_data:
-            print(f"📊 [API] raw_adc para {device_id}:", raw_adc_data)
-        
-        device_data = {
-            'device_id': device_id,
-            'status': 'online' if is_online else 'offline',
-            'last_seen': info['last_seen'],
-            'registered_at': info.get('registered_at', info['last_seen']),
-            'heartbeat': info.get('heartbeat', {}),
-            'telemetry': {
-                'battery_voltage': telemetry_data.get('battery_voltage', 0),
-                'battery_soc': telemetry_data.get('battery_soc', 0),
-                'solar_power': telemetry_data.get('solar_power', 0),
-                'wind_power': telemetry_data.get('wind_power', 0),
-                'load_power': telemetry_data.get('load_power', 0),
-                'temperature': telemetry_data.get('temperature', 0),
-                'v_bat_v': telemetry_data.get('v_bat_v', 0),
-                'v_wind_v_dc': telemetry_data.get('v_wind_v_dc', 0),
-                'v_solar_v': telemetry_data.get('v_solar_v', 0),
-                'v_load_v': telemetry_data.get('v_load_v', 0),
-                'relays': relays_data,
-                'raw_adc': raw_adc_data
-            }
-        }
-        
-        devices.append(device_data)
-    
-    return {
-        'devices': devices,
-        'total': len(devices),
-        'online': online_count,
-        'offline': len(devices) - online_count
+    diagnostico = {
+        'backend_funcionando': True,
+        'timestamp': datetime.now().isoformat(),
+        'contador_total_paquetes': contador_paquetes_esp32,
+        'dispositivos_registrados': len(DEVICES_STORE),
+        'device_ids': list(DEVICES_STORE.keys()),
+        'ultimo_paquete': None
     }
+    
+    if DEVICES_STORE:
+        # Encontrar el dispositivo más reciente
+        for device_id, info in DEVICES_STORE.items():
+            last_seen = datetime.fromisoformat(info['last_seen'])
+            seconds_ago = (datetime.now() - last_seen).total_seconds()
+            diagnostico['ultimo_paquete'] = {
+                'device_id': device_id,
+                'hace_segundos': round(seconds_ago, 1),
+                'contador': info.get('contador', 0),
+                'tiene_raw_adc': bool(info.get('raw_adc', {}))
+            }
+            break
+    
+    return diagnostico
+
+# Endpoint /api/esp32/devices movido a esp32_router.py para evitar duplicación
+# El router se encarga de leer DEVICES_STORE y devolver la lista correcta
+
+# Endpoint de depuración para ver el store crudo
+@app.get("/api/esp32/devices/raw_store")
+async def ver_store_crudo():
+    print(f"🟠 [GET /devices/raw_store] keys={list(DEVICES_STORE.keys())}")
+    return DEVICES_STORE
 
 
 @app.get("/api/esp32/status/{device_id}")

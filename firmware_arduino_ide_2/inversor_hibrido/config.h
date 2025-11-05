@@ -24,7 +24,7 @@
 // #define SERVER_URL "http://localhost:11113"
 
 #define DEVICE_ID "ESP32_INVERSOR_001"
-#define SEND_INTERVAL 5000                    // Enviar datos cada 5 seg
+#define SEND_INTERVAL 500                     // ⚡ Enviar datos cada 0.5 seg (TIEMPO REAL)
 #define COMMAND_CHECK_INTERVAL 10000          // Verificar comandos cada 10 seg
 
 // ===== STAGE 1: Intervals =====
@@ -66,6 +66,19 @@
 #define VIENTO_PULSOS_POR_REV 1
 #define VIENTO_RADIO_M 0.1  // 10cm
 #define VIENTO_FACTOR_CORRECCION 1.18  // Factor para viento real
+
+// ===== RPM (frecuencia eléctrica -> RPM turbina) =====
+// Señal 0–3 V: HIGH en semiciclo positivo, LOW en negativo.
+// Contaremos flanco ascendente (RISING) => 1 flanco por ciclo eléctrico.
+#define PIN_RPM_INPUT                  13      // GPIO para RPM (ajustar según hardware)
+#define RPM_EDGES_PER_ELECTRICAL_CYCLE 1       // flancos útiles por ciclo eléctrico
+#define RPM_MEASURE_WINDOW_MS          500     // ventana de integración (ms)
+#define RPM_DEBOUNCE_US                500     // anti-rebote por ruido (µs)
+
+// Conversión frecuencia eléctrica -> RPM mecánica:
+//   RPM = (freq_electrica_Hz * 60) / POLE_PAIRS / GEAR_RATIO
+#define TURBINE_POLE_PAIRS             10      // pares de polos del generador
+#define TURBINE_GEAR_RATIO             1.0f    // 1.0 = acople directo
 
 // ===== SISTEMA =====
 #define BATTERY_CAPACITY_WH 5000.0

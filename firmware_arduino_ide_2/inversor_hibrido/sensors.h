@@ -14,6 +14,10 @@
 #include <Arduino.h>
 #include "config.h"
 
+extern "C" {
+  #include "esp_timer.h"
+}
+
 // ===== BIQUAD IIR FILTER (2nd order low-pass for wind DC extraction) =====
 struct Biquad {
   float a1 = 0, a2 = 0;
@@ -68,6 +72,10 @@ struct SensorData {
   float soc;                // % (0-100)
   float temperatura;        // °C (simulado si no hay sensor)
   
+  // RPM turbina eólica
+  float turbine_rpm;        // RPM mecánica de turbina
+  float frequency_hz;       // Frecuencia eléctrica (Hz)
+  
   // ===== VALORES RAW DE ADCs (para debug y calibración) =====
   int adc_bat1;             // Valor raw ADC batería 1 (0-4095)
   int adc_bat2;             // Valor raw ADC batería 2 (0-4095)
@@ -98,6 +106,20 @@ void IRAM_ATTR windPulseISR() {
   windPulseCount++;
 }
 
+// ===== VARIABLES GLOBALES PARA RPM =====
+volatile uint32_t rpm_edge_count = 0;
+volatile uint64_t rpm_last_edge_us = 0;
+static unsigned long rpm_window_start_ms = 0;
+
+// ===== ISR PARA RPM (conteo de flancos) =====
+void IRAM_ATTR rpm_isr() {
+  const uint64_t now = esp_timer_get_time(); // µs
+  if (now - rpm_last_edge_us >= RPM_DEBOUNCE_US) {
+    rpm_edge_count++;
+    rpm_last_edge_us = now;
+  }
+}
+
 // ===== INICIALIZACIÓN =====
 void initSensors() {
   // Configurar ADC
@@ -108,17 +130,68 @@ void initSensors() {
   pinMode(PIN_VELOCIDAD_VIENTO, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(PIN_VELOCIDAD_VIENTO), windPulseISR, FALLING);
   
+  // Configurar pin RPM (entrada digital para frecuencia)
+  pinMode(PIN_RPM_INPUT, INPUT);  // Usar INPUT o INPUT_PULLDOWN según hardware
+  attachInterrupt(digitalPinToInterrupt(PIN_RPM_INPUT), rpm_isr, RISING);
+  
   // Inicializar datos
   memset(&sensores, 0, sizeof(sensores));
   lastWindTime = millis();
+  rpm_window_start_ms = millis();
   
   // Inicializar filtro biquad para viento (fs=1000Hz, fc=10Hz, Q=0.707)
   wind_lp = make_lp(1000.0f, 10.0f, 0.707f);
 }
 
-// ===== LECTURA VOLTAJES =====
+// ===== LECTURA ADC CON FILTRADO ROBUSTO =====
+// Cada canal ADC tiene características distintas, así que filtramos individualmente
+int leerADC_Bateria(int pin) {
+  // Batería: 50 muestras con promedio móvil (muy estable)
+  const int num_muestras = 50;
+  long suma = 0;
+  for (int i = 0; i < num_muestras; i++) {
+    suma += analogRead(pin);
+    delayMicroseconds(50);
+  }
+  return suma / num_muestras;
+}
+
+int leerADC_Eolica(int pin) {
+  // Eólica: 30 muestras (señal más ruidosa por AC rectificado)
+  const int num_muestras = 30;
+  long suma = 0;
+  for (int i = 0; i < num_muestras; i++) {
+    suma += analogRead(pin);
+    delayMicroseconds(100);
+  }
+  return suma / num_muestras;
+}
+
+int leerADC_Solar(int pin) {
+  // Solar: 20 muestras (relativamente estable)
+  const int num_muestras = 20;
+  long suma = 0;
+  for (int i = 0; i < num_muestras; i++) {
+    suma += analogRead(pin);
+    delayMicroseconds(100);
+  }
+  return suma / num_muestras;
+}
+
+int leerADC_Carga(int pin) {
+  // Carga: 20 muestras (puede variar rápido)
+  const int num_muestras = 20;
+  long suma = 0;
+  for (int i = 0; i < num_muestras; i++) {
+    suma += analogRead(pin);
+    delayMicroseconds(100);
+  }
+  return suma / num_muestras;
+}
+
+// ===== LECTURA VOLTAJES (usando filtrado específico) =====
 float leerVoltaje(int pin, int* raw_out = nullptr) {
-  int raw = analogRead(pin);
+  int raw = leerADC_Bateria(pin);  // Usar filtrado de batería por defecto
   
   // Guardar valor RAW si se proporciona puntero
   if (raw_out != nullptr) {
@@ -190,18 +263,43 @@ float leerIrradiancia(int pin, int* raw_out = nullptr) {
   return irradiancia;
 }
 
-// ===== CALCULAR RPM =====
-float calcularRPM() {
-  unsigned long now = millis();
-  unsigned long elapsed = now - lastWindTime;
+// ===== CALCULAR RPM TURBINA (desde frecuencia eléctrica) =====
+void calcularRPM_Turbina() {
+  const unsigned long now_ms = millis();
   
-  if (elapsed >= 1000) {
-    float rps = (float)windPulseCount / (elapsed / 1000.0);
-    float rpm = rps * 60.0;
-    return rpm;
+  if (now_ms - rpm_window_start_ms >= RPM_MEASURE_WINDOW_MS) {
+    // Leer y resetear contador de flancos
+    noInterrupts();
+    uint32_t edges = rpm_edge_count;
+    rpm_edge_count = 0;
+    interrupts();
+
+    // Calcular frecuencia eléctrica
+    const float window_s = (float)RPM_MEASURE_WINDOW_MS / 1000.0f;
+    float freq_electrica_hz = 0.0f;
+    
+    if (RPM_EDGES_PER_ELECTRICAL_CYCLE > 0 && window_s > 0.0f) {
+      freq_electrica_hz = (edges / (float)RPM_EDGES_PER_ELECTRICAL_CYCLE) / window_s;
+    }
+
+    // Convertir frecuencia eléctrica a RPM mecánica
+    // RPM = (freq_Hz * 60) / pole_pairs / gear_ratio
+    if (TURBINE_POLE_PAIRS > 0 && TURBINE_GEAR_RATIO > 0.0f) {
+      sensores.turbine_rpm = (freq_electrica_hz * 60.0f) / ((float)TURBINE_POLE_PAIRS * TURBINE_GEAR_RATIO);
+    } else {
+      sensores.turbine_rpm = 0.0f;
+    }
+    
+    sensores.frequency_hz = freq_electrica_hz;
+
+    #if DEBUG_SENSORS
+    if (edges > 0) {  // Solo imprimir si hay señal
+      Serial.printf("[RPM] edges=%u freq=%.2fHz rpm=%.1f\n", edges, freq_electrica_hz, sensores.turbine_rpm);
+    }
+    #endif
+
+    rpm_window_start_ms = now_ms;
   }
-  
-  return 0;
 }
 
 // ===== LECTURA VELOCIDAD VIENTO =====
@@ -233,24 +331,27 @@ float calcularSOC(float voltaje) {
 
 // ===== LEER TODOS LOS SENSORES =====
 void readAllSensors() {
-  // Voltajes (guardar valores RAW también)
-  sensores.voltaje_bat1 = leerVoltaje(PIN_VOLTAJE_BAT1, &sensores.adc_bat1);
-  sensores.voltaje_bat2 = leerVoltaje(PIN_VOLTAJE_BAT2, &sensores.adc_bat2);
-  sensores.voltaje_bat3 = leerVoltaje(PIN_VOLTAJE_BAT3, &sensores.adc_bat3);
+  // ===== LEER ADCs CON FILTRADO ESPECÍFICO =====
+  // Usar funciones específicas para cada canal
+  sensores.adc_bat1 = leerADC_Bateria(PIN_VOLTAJE_BAT1);
+  sensores.adc_eolica = leerADC_Eolica(PIN_CORRIENTE_EOLICA);
+  sensores.adc_solar = leerADC_Solar(PIN_CORRIENTE_SOLAR);
+  sensores.adc_consumo = leerADC_Carga(PIN_CORRIENTE_CONSUMO);
   
-  // Calcular promedio solo de sensores conectados
-  int sensores_activos = 0;
-  float suma_voltajes = 0;
-  if (sensores.voltaje_bat1 > 0) { suma_voltajes += sensores.voltaje_bat1; sensores_activos++; }
-  if (sensores.voltaje_bat2 > 0) { suma_voltajes += sensores.voltaje_bat2; sensores_activos++; }
-  if (sensores.voltaje_bat3 > 0) { suma_voltajes += sensores.voltaje_bat3; sensores_activos++; }
+  // Voltaje batería (solo 1 canal)
+  sensores.voltaje_bat1 = (sensores.adc_bat1 > 100) ? (sensores.adc_bat1 * VOLTAJE_FACTOR) : 0.0;
+  sensores.voltaje_promedio = sensores.voltaje_bat1;
   
-  sensores.voltaje_promedio = (sensores_activos > 0) ? (suma_voltajes / sensores_activos) : 0.0;
+  // Copiar para compatibilidad (pero todos son el mismo valor)
+  sensores.adc_bat2 = sensores.adc_bat1;
+  sensores.adc_bat3 = sensores.adc_bat1;
+  sensores.voltaje_bat2 = sensores.voltaje_bat1;
+  sensores.voltaje_bat3 = sensores.voltaje_bat1;
   
   // Corrientes (guardar valores RAW también)
-  sensores.corriente_solar = leerCorriente(PIN_CORRIENTE_SOLAR, &sensores.adc_solar);
-  sensores.corriente_eolica = leerCorriente(PIN_CORRIENTE_EOLICA, &sensores.adc_eolica);
-  sensores.corriente_consumo = leerCorriente(PIN_CORRIENTE_CONSUMO, &sensores.adc_consumo);
+  sensores.corriente_solar = leerCorriente(PIN_CORRIENTE_SOLAR, nullptr);  // Ya leímos el raw arriba
+  sensores.corriente_eolica = leerCorriente(PIN_CORRIENTE_EOLICA, nullptr);
+  sensores.corriente_consumo = leerCorriente(PIN_CORRIENTE_CONSUMO, nullptr);
   
   // Potencias
   sensores.potencia_solar = sensores.voltaje_promedio * sensores.corriente_solar;
@@ -261,13 +362,16 @@ void readAllSensors() {
   sensores.irradiancia = leerIrradiancia(PIN_IRRADIANCIA, &sensores.adc_ldr);
   sensores.velocidad_viento = leerVelocidadViento();
   
+  // ===== RPM TURBINA (calcular periódicamente) =====
+  calcularRPM_Turbina();
+  
   // Estado batería
   sensores.soc = calcularSOC(sensores.voltaje_promedio);
   sensores.temperatura = 25.0;  // Simulado (agregar DS18B20 si querés)
   
   // ===== STAGE 1: Leer voltajes raw 0-3.3V (sin calibración) =====
-  // Batería: promedio de los 3 canales convertidos a 0-3.3V
-  sensores.v_bat_v = ((sensores.adc_bat1 + sensores.adc_bat2 + sensores.adc_bat3) / 3.0f) * 3.3f / 4095.0f;
+  // Batería: solo 1 canal convertido a 0-3.3V
+  sensores.v_bat_v = sensores.adc_bat1 * 3.3f / 4095.0f;
   
   // Eólica: aplicar filtro biquad para extraer DC (cada llamada a readAllSensors)
   float v_wind_raw = sensores.adc_eolica * 3.3f / 4095.0f;

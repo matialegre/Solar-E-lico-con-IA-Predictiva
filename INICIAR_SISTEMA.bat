@@ -17,7 +17,7 @@ echo [2/2] Iniciando Frontend (React)...
 echo.
 start "Frontend - React" cmd /k "cd /d X:\PREDICCION DE CLIMA\frontend && npm start"
 echo Frontend iniciado en nueva ventana
-echo URL: http://localhost:3000 (se abrira automaticamente)
+echo URL: http://localhost:3002 (se abrira automaticamente)
 echo.
 
 echo.
@@ -26,7 +26,7 @@ echo   SISTEMA INICIADO
 echo ========================================
 echo.
 echo Backend:  http://localhost:11113
-echo Frontend: http://localhost:3000
+echo Frontend: http://localhost:3002
 echo.
 echo Para probar comandos, ejecuta:
 echo   test_reles.bat

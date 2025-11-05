@@ -252,29 +252,103 @@ void checkStage1Commands() {
   http.end();
 }
 
-// ===== STAGE 1: UART print (COMPACTO CON GPIOs) =====
+// ===== STAGE 1: UART print VISUAL MUY CLARO =====
 void printStage1UART() {
-  // Línea compacta con GPIOs y 3 decimales
-  Serial.print("[");
-  Serial.print(stage1_seq);
-  Serial.print("] POST:");
-  Serial.print(last_post_code);
-  Serial.print(" GET:");
-  Serial.print(last_get_code);
-  Serial.print(" | R:");
-  Serial.print(relay_state.solar_conectado ? "S" : "-");
-  Serial.print(relay_state.eolica_conectada ? "E" : "-");
-  Serial.print(relay_state.red_conectada ? "R" : "-");
-  Serial.print(relay_state.carga_conectada ? "C" : "-");
-  Serial.print(" | D34:");
-  Serial.print(sensores.v_bat_v, 3);
-  Serial.print("V D36:");
-  Serial.print(sensores.v_solar_v, 3);
-  Serial.print("V D35:");
-  Serial.print(sensores.v_wind_v_dc, 3);
-  Serial.print("V D39:");
-  Serial.print(sensores.v_load_v, 3);
-  Serial.println("V");
+  static unsigned long lastDetailPrint = 0;
+  unsigned long now = millis();
+  
+  // Cada 5 segundos: Imprimir detalle COMPLETO
+  if (now - lastDetailPrint >= 5000) {
+    Serial.println();
+    Serial.println("╔════════════════════════════════════════════════════════════════╗");
+    Serial.print("║  📊 TELEMETRÍA #");
+    Serial.print(stage1_seq);
+    Serial.print(" | Uptime: ");
+    Serial.print(millis()/1000);
+    Serial.println("s                             ║");
+    Serial.println("╠════════════════════════════════════════════════════════════════╣");
+    
+    // ADCs RAW (0-3.3V)
+    Serial.println("║  📍 ADCs RAW (0-3.3V REALES):                                  ║");
+    Serial.print("║    GPIO34 (Batería):  ");
+    Serial.print(sensores.v_bat_v, 3);
+    Serial.print("V  [raw: ");
+    Serial.print(sensores.adc_bat1);
+    Serial.println("/4095]              ║");
+    
+    Serial.print("║    GPIO35 (Eólica):   ");
+    Serial.print(sensores.v_wind_v_dc, 3);
+    Serial.print("V  [raw: ");
+    Serial.print(sensores.adc_eolica);
+    Serial.println("/4095]              ║");
+    
+    Serial.print("║    GPIO36 (Solar):    ");
+    Serial.print(sensores.v_solar_v, 3);
+    Serial.print("V  [raw: ");
+    Serial.print(sensores.adc_solar);
+    Serial.println("/4095]              ║");
+    
+    Serial.print("║    GPIO39 (Carga):    ");
+    Serial.print(sensores.v_load_v, 3);
+    Serial.print("V  [raw: ");
+    Serial.print(sensores.adc_consumo);
+    Serial.println("/4095]              ║");
+    
+    Serial.println("╠════════════════════════════════════════════════════════════════╣");
+    
+    // RPM y Frecuencia
+    Serial.println("║  🎯 RPM TURBINA:                                               ║");
+    Serial.print("║    RPM: ");
+    Serial.print(sensores.turbine_rpm, 1);
+    Serial.print(" RPM  |  Frecuencia: ");
+    Serial.print(sensores.frequency_hz, 2);
+    Serial.println(" Hz               ║");
+    
+    Serial.println("╠════════════════════════════════════════════════════════════════╣");
+    
+    // Relés
+    Serial.print("║  🔌 RELÉS: [");
+    Serial.print(relay_state.solar_conectado ? "✓" : "✗");
+    Serial.print("] Solar  [");
+    Serial.print(relay_state.eolica_conectada ? "✓" : "✗");
+    Serial.print("] Eólica  [");
+    Serial.print(relay_state.red_conectada ? "✓" : "✗");
+    Serial.print("] Red  [");
+    Serial.print(relay_state.carga_conectada ? "✓" : "✗");
+    Serial.println("] Carga  ║");
+    
+    Serial.println("╠════════════════════════════════════════════════════════════════╣");
+    
+    // Estado HTTP
+    Serial.print("║  🌐 HTTP: POST ");
+    Serial.print(last_post_code);
+    Serial.print("  GET ");
+    Serial.print(last_get_code);
+    Serial.print("  |  WiFi RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm          ║");
+    
+    Serial.println("╚════════════════════════════════════════════════════════════════╝");
+    Serial.println();
+    
+    lastDetailPrint = now;
+  } else {
+    // Modo COMPACTO cada envío (0.5s)
+    Serial.print("⚡[");
+    Serial.print(stage1_seq);
+    Serial.print("] ");
+    Serial.print(sensores.v_bat_v, 3);
+    Serial.print("V ");
+    Serial.print(sensores.v_wind_v_dc, 3);
+    Serial.print("V ");
+    Serial.print(sensores.v_solar_v, 3);
+    Serial.print("V ");
+    Serial.print(sensores.v_load_v, 3);
+    Serial.print("V | RPM:");
+    Serial.print(sensores.turbine_rpm, 0);
+    Serial.print(" | POST:");
+    Serial.println(last_post_code);
+  }
 }
 
 // ===== ENVIAR TELEMETRÍA ORIGINAL (mantener para compatibilidad) =====
@@ -310,6 +384,11 @@ void sendTelemetry() {
   doc["irradiancia"] = sensores.irradiancia;
   doc["velocidad_viento"] = sensores.velocidad_viento;
   
+  // RPM turbina eólica
+  doc["turbine_rpm"] = sensores.turbine_rpm;
+  doc["rpm"] = sensores.turbine_rpm;  // Legacy compatibility
+  doc["frequency_hz"] = sensores.frequency_hz;
+  
   // Estado batería
   doc["soc"] = sensores.soc;
   doc["temperatura"] = sensores.temperatura;
@@ -329,27 +408,19 @@ void sendTelemetry() {
   // ===== VALORES RAW DE ADCs (0-3.3V REALES) =====
   JsonObject raw_adc = doc.createNestedObject("raw_adc");
   
-  // ADC1 - Batería 1 (GPIO34)
+  // GPIO34 - Batería (ADC1_CH6)
   raw_adc["adc1_bat1"] = (sensores.adc_bat1 * 3.3) / 4095.0;
   raw_adc["adc1_bat1_raw"] = sensores.adc_bat1;
   
-  // ADC2 - Batería 2 (GPIO35)
-  raw_adc["adc2_bat2"] = (sensores.adc_bat2 * 3.3) / 4095.0;
-  raw_adc["adc2_bat2_raw"] = sensores.adc_bat2;
+  // GPIO35 - Eólica DC (ADC1_CH7)
+  raw_adc["adc2_eolica"] = (sensores.adc_eolica * 3.3) / 4095.0;
+  raw_adc["adc2_eolica_raw"] = sensores.adc_eolica;
   
-  // ADC3 - Batería 3 (GPIO32)
-  raw_adc["adc3_bat3"] = (sensores.adc_bat3 * 3.3) / 4095.0;
-  raw_adc["adc3_bat3_raw"] = sensores.adc_bat3;
+  // GPIO36 - Solar (ADC1_CH0)
+  raw_adc["adc5_solar"] = (sensores.adc_solar * 3.3) / 4095.0;
+  raw_adc["adc5_solar_raw"] = sensores.adc_solar;
   
-  // ADC4 - Corriente Solar (GPIO33)
-  raw_adc["adc4_solar"] = (sensores.adc_solar * 3.3) / 4095.0;
-  raw_adc["adc4_solar_raw"] = sensores.adc_solar;
-  
-  // ADC5 - Corriente Eólica (GPIO36)
-  raw_adc["adc5_wind"] = (sensores.adc_eolica * 3.3) / 4095.0;
-  raw_adc["adc5_wind_raw"] = sensores.adc_eolica;
-  
-  // ADC6 - Corriente Consumo (GPIO39)
+  // GPIO39 - Carga/Load (ADC1_CH3)
   raw_adc["adc6_load"] = (sensores.adc_consumo * 3.3) / 4095.0;
   raw_adc["adc6_load_raw"] = sensores.adc_consumo;
   

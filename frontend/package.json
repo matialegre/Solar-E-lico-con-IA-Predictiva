@@ -2,6 +2,7 @@
   "name": "inversor-inteligente-frontend",
   "version": "1.0.0",
   "private": true,
+  "proxy": "http://localhost:11113",
   "dependencies": {
     "@headlessui/react": "^1.7.17",
     "@heroicons/react": "^2.0.18",
